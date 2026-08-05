@@ -17,6 +17,13 @@ struct ImageAdjustments: Equatable {
     /// Astro "enhance": a histogram stretch that pulls faint stars out of the
     /// dark — the signature one-tap night boost. 0 = off, 1 = full stretch.
     var starBoost: Double = 0
+    /// Light-pollution / haze removal: lifts the black point off the orange
+    /// skyglow and cools the cast. 0 = off, 1 = strong. The biggest quality win
+    /// for city shots.
+    var dehaze: Double = 0
+    /// Vibrance: saturates muted colours while protecting already-saturated
+    /// ones — nebula/aurora colour without going garish. 0 = neutral.
+    var vibrance: Double = 0
 
     static let neutral = ImageAdjustments()
     var isNeutral: Bool { self == .neutral }
@@ -67,12 +74,56 @@ enum ImageProcessor {
             image = f.outputImage ?? image
         }
 
+        // Light-pollution / haze removal: subtract a warm skyglow cast and lift
+        // the black point off it, so the sky goes deep instead of orange-grey.
+        if adj.dehaze > 0 {
+            image = removeSkyglow(image, amount: adj.dehaze)
+        }
+
+        // Vibrance: boost muted colours, protect already-saturated ones.
+        if adj.vibrance != 0 {
+            let f = CIFilter.vibrance()
+            f.inputImage = image
+            f.amount = Float(adj.vibrance)
+            image = f.outputImage ?? image
+        }
+
         // Star boost: a gamma + tone-curve stretch that lifts faint signal
         // while holding the black point, so stars emerge without graying the sky.
         if adj.starBoost > 0 {
             image = starStretch(image, amount: adj.starBoost)
         }
 
+        return image
+    }
+
+    /// Subtract the orange/green skyglow cast and pull the black point down.
+    /// A colour-matrix bias removes a warm tint; a tone curve re-anchors black.
+    private static func removeSkyglow(_ input: CIImage, amount: Double) -> CIImage {
+        var image = input
+        let a = Float(amount)
+
+        // Cool the cast: reduce red/green bias typical of sodium/LED skyglow.
+        let matrix = CIFilter.colorMatrix()
+        matrix.inputImage = image
+        matrix.rVector = CIVector(x: CGFloat(1 - 0.06 * Double(a)), y: 0, z: 0, w: 0)
+        matrix.gVector = CIVector(x: 0, y: CGFloat(1 - 0.03 * Double(a)), z: 0, w: 0)
+        matrix.bVector = CIVector(x: 0, y: 0, z: 1, w: 0)
+        matrix.biasVector = CIVector(x: CGFloat(-0.03 * Double(a)),
+                                     y: CGFloat(-0.03 * Double(a)),
+                                     z: CGFloat(-0.02 * Double(a)), w: 0)
+        image = matrix.outputImage ?? image
+
+        // Re-anchor black: pull the low end down so the sky reads deep.
+        let curve = CIFilter.toneCurve()
+        curve.inputImage = image
+        let lift = CGFloat(0.10 * Double(a))
+        curve.point0 = CGPoint(x: 0.00, y: 0.00)
+        curve.point1 = CGPoint(x: 0.15 + lift, y: 0.05)
+        curve.point2 = CGPoint(x: 0.50, y: 0.50)
+        curve.point3 = CGPoint(x: 0.75, y: 0.78)
+        curve.point4 = CGPoint(x: 1.00, y: 1.00)
+        image = curve.outputImage ?? image
         return image
     }
 

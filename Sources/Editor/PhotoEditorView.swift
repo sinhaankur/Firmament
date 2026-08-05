@@ -21,12 +21,17 @@ struct PhotoEditorView: View {
     @State private var activeTool: Tool = .enhance
     @State private var autoExplanation: String?
     @State private var histogram: (r: [CGFloat], g: [CGFloat], b: [CGFloat])?
+    @State private var originalPreview: UIImage?   // for before/after compare
+    @State private var showingOriginal = false
+    @State private var zoom: CGFloat = 1
+    @GestureState private var pinch: CGFloat = 1
 
     private let ctx = CIContext()
 
     enum Tool: String, CaseIterable {
         case enhance = "Enhance", exposure = "Exposure", contrast = "Contrast"
-        case warmth = "Warmth", saturation = "Color", shadows = "Shadows"
+        case dehaze = "De-glow", highlights = "Highlights", shadows = "Shadows"
+        case warmth = "Warmth", saturation = "Color", vibrance = "Vibrance"
     }
 
     var body: some View {
@@ -75,7 +80,7 @@ struct PhotoEditorView: View {
         HStack {
             Button("Discard", role: .destructive) { onDone() }
             Spacer()
-            Text("Edit").font(.headline).foregroundStyle(.white)
+            compareButton
             Spacer()
             Button {
                 Task { await save() }
@@ -91,12 +96,47 @@ struct PhotoEditorView: View {
 
     private var preview: some View {
         ZStack {
-            if let img = previewImage {
+            // Show the untouched original while pressing "compare".
+            let shown = showingOriginal ? (originalPreview ?? previewImage) : previewImage
+            if let img = shown {
                 Image(uiImage: img)
                     .resizable().scaledToFit()
+                    .scaleEffect(zoom * pinch)
+                    .gesture(
+                        MagnificationGesture()
+                            .updating($pinch) { v, s, _ in s = v }
+                            .onEnded { v in zoom = min(6, max(1, zoom * v)) }
+                    )
+                    .onTapGesture(count: 2) {           // double-tap resets zoom
+                        withAnimation { zoom = 1 }
+                    }
             } else {
                 ProgressView().tint(.white)
             }
+
+            // Top-right badges.
+            VStack {
+                HStack {
+                    if showingOriginal {
+                        Text("BEFORE")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(.black.opacity(0.6), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                    Spacer()
+                    if zoom > 1.01 {
+                        Text(String(format: "%.0f×", zoom * pinch))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(.black.opacity(0.6), in: Capsule())
+                            .foregroundStyle(.cyan)
+                    }
+                }
+                Spacer()
+            }
+            .padding(10)
+
             if let ok = savedOK {
                 Label(ok ? "Saved to Photos" : "Save failed",
                       systemImage: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -107,6 +147,23 @@ struct PhotoEditorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .contentShape(Rectangle())
+    }
+
+    /// A press-and-hold "compare" button for before/after.
+    private var compareButton: some View {
+        Image(systemName: "rectangle.2.swap")
+            .font(.system(size: 18))
+            .foregroundStyle(showingOriginal ? .cyan : .white.opacity(0.7))
+            .frame(width: 44, height: 34)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in if !showingOriginal { showingOriginal = true } }
+                    .onEnded { _ in showingOriginal = false }
+            )
+            .accessibilityLabel("Hold to compare with the original")
     }
 
     private var controls: some View {
@@ -175,12 +232,15 @@ struct PhotoEditorView: View {
     @ViewBuilder
     private var activeSlider: some View {
         switch activeTool {
-        case .enhance:    slider($adj.starBoost, -0, 1, "Faint-star boost")
+        case .enhance:    slider($adj.starBoost, 0, 1, "Faint-star boost")
         case .exposure:   slider($adj.exposure, -2, 2, "Exposure (EV)")
         case .contrast:   slider($adj.contrast, 0.5, 1.5, "Contrast")
+        case .dehaze:     slider($adj.dehaze, 0, 1, "Remove light pollution / glow")
+        case .highlights: slider($adj.highlights, 0.3, 1, "Highlights")
+        case .shadows:    slider($adj.shadows, 0, 1, "Lift shadows")
         case .warmth:     slider($adj.warmth, -1, 1, "Warmth")
         case .saturation: slider($adj.saturation, 0, 2, "Color")
-        case .shadows:    slider($adj.shadows, 0, 1, "Lift shadows")
+        case .vibrance:   slider($adj.vibrance, -1, 1, "Vibrance")
         }
     }
 
@@ -199,6 +259,13 @@ struct PhotoEditorView: View {
         guard !target.isEmpty, !target.isInfinite, !target.isNull else { return }
         let scale = min(1, 1200 / max(target.width, target.height))
         let scaled = original.transformed(by: .init(scaleX: scale, y: scale))
+
+        // Cache the untouched original once, for the before/after compare.
+        if originalPreview == nil,
+           let cg = ctx.createCGImage(scaled, from: scaled.extent) {
+            originalPreview = UIImage(cgImage: cg)
+        }
+
         let out = ImageProcessor.apply(adj, to: scaled)
         // Some filters return an infinite extent — always crop back to the image.
         let bounds = out.extent.isInfinite ? scaled.extent : out.extent
