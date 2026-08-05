@@ -23,9 +23,12 @@ no third-party dependencies.** The gaps below are prioritized.
    users can't operate the shutter, mode switch, or controls. **Fix: label the
    key controls (shutter, mode switch, telescope/settings/import buttons).**
    *(Basic labels added in this pass.)*
-3. **No automated tests.** The pure engines (SkyMath, SGP4, SolarSystem,
-   ImageProcessor, CapturePreset) are ideal unit-test targets and currently have
-   none. **Add an XCTest target** — highest ROI is SGP4 + alt/az regression.
+3. ~~**No automated tests.**~~ **DONE** — added an XCTest target with 19 passing
+   tests covering the fidelity-critical math: SkyMath (Julian date, GMST,
+   obliquity, zenith, alt/az bounds, refraction), SolarSystem (Sun/Moon/planet
+   ranges + phase + full-sky composition), SGP4 (ISS 380–440 km / 7.66 km/s, all
+   sats resolve), plus presets, star-catalog load, constellations, image
+   adjustments, and AutoDevelop. Run with `xcodebuild test` or `./run-tests.sh`.
 
 ## Medium priority
 

@@ -43,3 +43,25 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sinhaankur.nightsky
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO
+
+  NightSkyTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: NightSky
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sinhaankur.nightsky.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  NightSky:
+    build:
+      targets:
+        NightSky: all
+        NightSkyTests: [test]
+    test:
+      targets:
+        - NightSkyTests

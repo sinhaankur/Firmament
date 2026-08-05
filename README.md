@@ -10,6 +10,7 @@
 [![Platform](https://img.shields.io/badge/platform-iOS%2017%2B-lightgrey.svg)](#requirements)
 [![Swift](https://img.shields.io/badge/Swift-6-orange.svg)](#requirements)
 [![Custom code](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#license--attribution)
+[![Tests](https://img.shields.io/badge/tests-19%20passing-success.svg)](#tests)
 [![Open source](https://img.shields.io/badge/open%20source-yes-success.svg)](#contributing)
 
 A native iOS app that fuses the phone's camera, LiDAR, GPS, compass, and motion
@@ -164,6 +165,17 @@ Phase 0 (this milestone): the app builds and runs on-device — live camera sky,
 real Sun/Moon/planet/star labels from your location and time, tap-to-inspect, and
 a tripod-gated Night Capture path. Explore/Spot/Capture roadmap is in
 [`DESIGN.md`](./DESIGN.md).
+
+## Tests
+
+The fidelity-critical math is covered by an XCTest suite (**19 tests**) — SkyMath
+(Julian date, sidereal time, alt/az), the Sun/Moon/planet ephemeris, the
+from-scratch SGP4 propagator (ISS altitude + speed regression), the star catalog,
+capture presets, and the AutoDevelop recovery. Run them with:
+
+```bash
+./run-tests.sh          # or: xcodebuild test -scheme NightSky -destination '…'
+```
 
 ## License & attribution
 
