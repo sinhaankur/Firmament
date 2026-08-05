@@ -21,7 +21,7 @@ struct SkyOverlayView: View {
                 // Full naked-eye star field as points (drawn first, behind labels).
                 starFieldCanvas(in: geo.size, vFov: vFov)
                 if showConstellations {
-                    constellationLines(placedItems)
+                    constellationLines(in: geo.size, vFov: vFov)
                 }
                 ForEach(placedItems, id: \.object.id) { item in
                     label(for: item.object)
@@ -35,14 +35,20 @@ struct SkyOverlayView: View {
         .allowsHitTesting(true)
     }
 
-    /// Draw each constellation figure as connected line segments between the
-    /// on-screen positions of its stars. Only segments where both endpoints are
-    /// currently on screen are drawn.
-    private func constellationLines(_ items: [Placed]) -> some View {
-        // Fast lookup: star name → screen point.
+    /// Draw each constellation figure as connected line segments. Projects the
+    /// figure's stars directly from the resolved sky objects (independent of the
+    /// de-collided label set) so lines are never broken by label capping.
+    private func constellationLines(in size: CGSize, vFov: Double) -> some View {
+        let p = model.pointing
+        // Name → screen point for every resolved star currently up.
         var pointByName: [String: CGPoint] = [:]
-        for item in items where item.object.kind == .star {
-            pointByName[item.object.name] = item.point
+        for obj in model.objects where obj.kind == .star && obj.altitude > -3 {
+            if let norm = SkyProjection.project(
+                objectAz: obj.azimuth, objectAlt: obj.altitude,
+                pointing: p, hFovDeg: horizontalFovDegrees, vFovDeg: vFov
+            ) {
+                pointByName[obj.name] = CGPoint(x: norm.x * size.width, y: norm.y * size.height)
+            }
         }
         return Canvas { ctx, _ in
             for figure in Constellations.all {
@@ -87,17 +93,39 @@ struct SkyOverlayView: View {
 
     private func placed(in size: CGSize, vFov: Double) -> [Placed] {
         let p = model.pointing
-        return model.objects.compactMap { obj -> Placed? in
-            // Only label things that are up (with a little slack near horizon).
-            guard obj.altitude > -3 else { return nil }
+
+        // Project the objects worth labeling. Unnamed catalog stars (whose name
+        // is a bare "HYG-####" id) are never labeled — they live in the point
+        // field. Everything else is a candidate.
+        var candidates: [(placed: Placed, priority: Double)] = []
+        for obj in model.objects {
+            guard obj.altitude > -3 else { continue }
+            if obj.kind == .star && obj.name.hasPrefix("HYG-") { continue }
             guard let norm = SkyProjection.project(
                 objectAz: obj.azimuth, objectAlt: obj.altitude,
-                pointing: p,
-                hFovDeg: horizontalFovDegrees, vFovDeg: vFov
-            ) else { return nil }
+                pointing: p, hFovDeg: horizontalFovDegrees, vFovDeg: vFov
+            ) else { continue }
             let point = CGPoint(x: norm.x * size.width, y: norm.y * size.height)
-            return Placed(object: obj, point: point)
+            // Priority: Sun/Moon/planets/satellites first, then brighter stars.
+            let kindBoost: Double = obj.kind == .star ? 0 : -100
+            let priority = kindBoost + (obj.magnitude ?? 6)
+            candidates.append((Placed(object: obj, point: point), priority))
         }
+
+        // De-collide: keep the highest-priority label in any ~72pt neighbourhood
+        // so labels never stack into an unreadable wall.
+        candidates.sort { $0.priority < $1.priority }
+        var kept: [Placed] = []
+        let minGap: CGFloat = 72
+        for c in candidates {
+            let tooClose = kept.contains { existing in
+                abs(existing.point.x - c.placed.point.x) < minGap &&
+                abs(existing.point.y - c.placed.point.y) < minGap
+            }
+            if !tooClose { kept.append(c.placed) }
+            if kept.count >= 18 { break }   // hard cap keeps it clean
+        }
+        return kept
     }
 
     @ViewBuilder

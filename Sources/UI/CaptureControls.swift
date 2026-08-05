@@ -44,46 +44,80 @@ struct CaptureControls: View {
         totalExposure > 0 ? totalExposure : Double(stackCount) * perFrame
     }
 
+    @State private var showSettings = false    // expandable pro controls
+
     var body: some View {
-        VStack(spacing: 12) {
-            if !inFrame.isEmpty {
-                inFrameChips
+        VStack(spacing: 10) {
+            // One quiet info line — tap to see the advisor + hardware detail.
+            infoBar
+
+            // Expandable pro controls (hidden by default for a clean surface).
+            if showSettings {
+                VStack(spacing: 10) {
+                    if let p = profile {
+                        Text(p.summary)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                    if !inFrame.isEmpty { inFrameChips }
+                    zoomPicker
+                    if !isTimelapse { exposurePicker }
+                    levelIndicator
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            if let p = profile {
-                Text(p.summary)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.55))
-                Text(p.apertureNote)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-            }
-            if let advice, !advice.isEmpty {
-                Label(advice, systemImage: "sparkles")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(.black.opacity(0.4), in: Capsule())
-            }
+
             modeToggle
-            zoomPicker
+
             if isTimelapse {
                 timelapseControls
             } else {
-                exposurePicker
-                levelIndicator
-                stabilityChip
                 statusLine
                 HStack(spacing: 22) {
-                    timerButton
+                    settingsToggleButton
                     shutter
-                    Color.clear.frame(width: 44, height: 44)   // balance the row
+                    timerButton
                 }
             }
         }
         .padding(.bottom, 8)
+        .animation(.easeInOut(duration: 0.2), value: showSettings)
+    }
+
+    // MARK: - Info bar (advisor + steadiness in one quiet line)
+
+    private var infoBar: some View {
+        Button { showSettings.toggle() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: motion.isSteady ? "checkmark.circle.fill" : "hand.raised.slash")
+                    .foregroundStyle(motion.isSteady ? .green : .yellow)
+                Text(infoText)
+                    .lineLimit(1)
+                    .foregroundStyle(.white.opacity(0.85))
+                Image(systemName: showSettings ? "chevron.down" : "slider.horizontal.3")
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 14).padding(.vertical, 7)
+            .background(.black.opacity(0.45), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var infoText: String {
+        if let advice, !advice.isEmpty { return advice }
+        return motion.isSteady ? "Steady — ready for a long capture" : "Hold still or use a tripod"
+    }
+
+    private var settingsToggleButton: some View {
+        Button { showSettings.toggle() } label: {
+            VStack(spacing: 1) {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 20))
+                Text("Settings").font(.system(size: 9, weight: .medium))
+            }
+            .foregroundStyle(showSettings ? .cyan : .white.opacity(0.6))
+            .frame(width: 44, height: 44)
+        }
     }
 
     // MARK: - Photo | Time-lapse toggle
@@ -176,17 +210,6 @@ struct CaptureControls: View {
             .foregroundStyle(.white)
             .disabled(timelapse.isRecording)
         }
-    }
-
-    private var stabilityChip: some View {
-        Label(
-            motion.isSteady ? "Steady — long capture ready" : "Hold still or use a tripod",
-            systemImage: motion.isSteady ? "checkmark.circle.fill" : "hand.raised.slash"
-        )
-        .font(.system(size: 12, weight: .medium, design: .rounded))
-        .foregroundStyle(motion.isSteady ? .green : .yellow)
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(.black.opacity(0.4), in: Capsule())
     }
 
     @ViewBuilder

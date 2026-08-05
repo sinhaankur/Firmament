@@ -31,6 +31,9 @@ final class NightCapture: NSObject, ObservableObject {
     /// The freshly captured frame, handed to the editor for review + tweaks
     /// before saving. Set when a capture finishes; cleared when the editor closes.
     @Published var capturedForEditing: CIImage?
+    /// Increments each time a capture completes — a reliable change signal for
+    /// the UI (CIImage isn't Equatable, and identity can repeat).
+    @Published var captureSerial: Int = 0
     /// What the last capture was shot with — fed to the editor's AutoDevelop so
     /// it can reason about the exposure the frame was taken at.
     @Published var lastCaptureMeta = AutoDevelop.CaptureMeta()
@@ -270,6 +273,7 @@ final class NightCapture: NSObject, ObservableObject {
         lastImage = UIImage(cgImage: cg)
         // Hand the stacked result to the editor for review before saving.
         capturedForEditing = CIImage(cgImage: cg)
+        captureSerial += 1
         state = .idle
     }
 
@@ -283,6 +287,7 @@ final class NightCapture: NSObject, ObservableObject {
         }
         lastImage = UIImage(cgImage: cg)
         capturedForEditing = CIImage(cgImage: cg)
+        captureSerial += 1
         state = .idle
     }
 

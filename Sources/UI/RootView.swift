@@ -41,7 +41,10 @@ struct RootView: View {
     @State private var showTelescope = false
     @State private var showSettings = false
     @State private var libraryPick: PhotosPickerItem?
-    @State private var importedForEditing: CIImage?
+    /// The image currently open in the editor (from capture OR import).
+    @State private var editingItem: EditableImage?
+    /// Surfaced if a library item can't be loaded, so failure isn't silent.
+    @State private var importError: String?
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
     @AppStorage("nightVision") private var nightVision = false
@@ -150,75 +153,74 @@ struct RootView: View {
             SettingsSheet(showConstellations: $showConstellations,
                           nightVision: $nightVision)
         }
-        // A single editor cover for both freshly-captured and imported images —
-        // two stacked fullScreenCovers don't reliably present in SwiftUI.
-        .fullScreenCover(item: editingBinding) { editable in
+        // A single editor cover, driven by an explicit @State item so both
+        // capture and import present reliably (a computed binding wouldn't
+        // re-trigger presentation).
+        .fullScreenCover(item: $editingItem) { editable in
             PhotoEditorView(original: editable.image, meta: editable.meta) {
+                editingItem = nil
                 night.capturedForEditing = nil
-                importedForEditing = nil
             }
         }
+        // Capture finished → open the editor.
+        .onChange(of: night.captureSerial) { _, _ in
+            if let ci = night.capturedForEditing {
+                editingItem = EditableImage(image: ci, meta: night.lastCaptureMeta)
+            }
+        }
+        // Library item chosen → load then open the editor.
         .onChange(of: libraryPick) { _, item in
             guard let item else { return }
             Task { await loadPickedImage(item) }
         }
+        .alert("Couldn't open that item",
+               isPresented: Binding(get: { importError != nil },
+                                    set: { if !$0 { importError = nil } })) {
+            Button("OK", role: .cancel) { importError = nil }
+        } message: { Text(importError ?? "") }
         .onDisappear { model.stop(); camera.stop(); telescope.disconnect() }
-    }
-
-    /// One binding that surfaces whichever image wants editing (captured or
-    /// imported), so there's a single presenter.
-    private var editingBinding: Binding<EditableImage?> {
-        Binding(
-            get: {
-                if let ci = night.capturedForEditing {
-                    return EditableImage(image: ci, meta: night.lastCaptureMeta)
-                }
-                if let ci = importedForEditing {
-                    return EditableImage(image: ci, meta: .init())
-                }
-                return nil
-            },
-            set: { newValue in
-                if newValue == nil {
-                    night.capturedForEditing = nil
-                    importedForEditing = nil
-                }
-            }
-        )
     }
 
     /// Load a library-picked photo OR video into a CIImage and open the editor.
     /// Videos / time-lapses are frame-stacked into one brighter still. Photos are
     /// orientation-corrected (HEIC/JPEG carry EXIF rotation CIImage ignores).
     private func loadPickedImage(_ item: PhotosPickerItem) async {
-        defer { Task { @MainActor in libraryPick = nil } }
+        // Clear the picker selection first so its sheet fully dismisses before
+        // we try to present the editor (presenting during dismissal is dropped).
+        await MainActor.run { libraryPick = nil }
+
+        var loaded: CIImage?
 
         // Video / time-lapse → stack frames into one still.
         if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
-            if let movie = try? await item.loadTransferable(type: VideoImporter.Movie.self),
-               let stacked = await VideoImporter().stackedFrame(from: movie.url),
-               !stacked.extent.isEmpty, !stacked.extent.isInfinite, !stacked.extent.isNull {
-                await MainActor.run { importedForEditing = stacked }
+            if let movie = try? await item.loadTransferable(type: VideoImporter.Movie.self) {
+                loaded = await VideoImporter().stackedFrame(from: movie.url)
             }
+        } else {
+            // Photo → decode with orientation baked in.
+            if let data = try? await item.loadTransferable(type: Data.self) {
+                if let ui = UIImage(data: data) {
+                    let fixed = ui.normalizedUp()
+                    if let cg = fixed.cgImage { loaded = CIImage(cgImage: cg) }
+                    else { loaded = CIImage(image: fixed) }
+                }
+                if loaded == nil {
+                    loaded = CIImage(data: data, options: [.applyOrientationProperty: true])
+                }
+            }
+        }
+
+        guard let image = loaded,
+              !image.extent.isEmpty, !image.extent.isInfinite, !image.extent.isNull else {
+            await MainActor.run { importError = "That photo or video couldn't be decoded." }
             return
         }
 
-        // Photo → decode with orientation baked in.
-        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
-        var ci: CIImage?
-        if let ui = UIImage(data: data) {
-            let fixed = ui.normalizedUp()
-            if let cg = fixed.cgImage {
-                ci = CIImage(cgImage: cg)
-            } else if let c = CIImage(image: fixed) {
-                ci = c
-            }
+        // Let the picker sheet finish dismissing, then present the editor.
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        await MainActor.run {
+            editingItem = EditableImage(image: image, meta: .init())
         }
-        if ci == nil {
-            ci = CIImage(data: data, options: [.applyOrientationProperty: true])
-        }
-        guard let image = ci, !image.extent.isEmpty, !image.extent.isInfinite, !image.extent.isNull else { return }
-        await MainActor.run { importedForEditing = image }
     }
 
     /// Start the sensors + camera. Called after onboarding, so the system
