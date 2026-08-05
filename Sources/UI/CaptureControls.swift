@@ -8,6 +8,8 @@ struct CaptureControls: View {
     @ObservedObject var motion: MotionService
     /// The camera engine, for the zoom control.
     @ObservedObject var camera: CameraEngine
+    /// The time-lapse recorder.
+    @ObservedObject var timelapse: TimelapseRecorder
     /// The active camera's honest capabilities (drives stack depth + summary).
     var profile: DeviceCaptureProfile?
     /// Optional one-line advice from the capture advisor.
@@ -17,6 +19,7 @@ struct CaptureControls: View {
 
     @State private var timerSeconds = 0        // self-timer: 0 / 3 / 10
     @State private var countdown: Int?         // live countdown display
+    @State private var isTimelapse = false     // Photo | Time-lapse
     /// Target total integration time (seconds). "Auto" = 0 → use the profile's
     /// suggested depth. Otherwise total exposure is achieved by stacking frames,
     /// which is how we get well past the ~1s single-frame hardware ceiling.
@@ -64,18 +67,115 @@ struct CaptureControls: View {
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.black.opacity(0.4), in: Capsule())
             }
+            modeToggle
             zoomPicker
-            exposurePicker
-            levelIndicator
-            stabilityChip
-            statusLine
-            HStack(spacing: 22) {
-                timerButton
-                shutter
-                Color.clear.frame(width: 44, height: 44)   // balance the row
+            if isTimelapse {
+                timelapseControls
+            } else {
+                exposurePicker
+                levelIndicator
+                stabilityChip
+                statusLine
+                HStack(spacing: 22) {
+                    timerButton
+                    shutter
+                    Color.clear.frame(width: 44, height: 44)   // balance the row
+                }
             }
         }
         .padding(.bottom, 8)
+    }
+
+    // MARK: - Photo | Time-lapse toggle
+
+    private var modeToggle: some View {
+        HStack(spacing: 0) {
+            ForEach([("Photo", false), ("Time-lapse", true)], id: \.0) { title, tl in
+                Button { isTimelapse = tl } label: {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(isTimelapse == tl ? Color.white : Color.clear, in: Capsule())
+                        .foregroundStyle(isTimelapse == tl ? .black : .white)
+                }
+            }
+        }
+        .padding(3)
+        .frame(maxWidth: 220)
+        .background(.black.opacity(0.4), in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.15)))
+    }
+
+    // MARK: - Time-lapse controls
+
+    @ViewBuilder
+    private var timelapseControls: some View {
+        VStack(spacing: 10) {
+            // Interval + frame count steppers.
+            HStack(spacing: 14) {
+                stepper("Every", "\(Int(timelapse.interval))s") {
+                    timelapse.interval = max(1, timelapse.interval - 1)
+                } up: {
+                    timelapse.interval = min(30, timelapse.interval + 1)
+                }
+                stepper("Frames", "\(timelapse.frameCount)") {
+                    timelapse.frameCount = max(10, timelapse.frameCount - 30)
+                } up: {
+                    timelapse.frameCount = min(1200, timelapse.frameCount + 30)
+                }
+            }
+            Text("Shoot ≈ \(timelapse.estimatedDurationText) · \(timelapse.frameCount) frames → \(Int(Double(timelapse.frameCount) / Double(timelapse.outputFPS)))s video")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+
+            timelapseStatus
+
+            // Record / stop button.
+            Button {
+                if timelapse.isRecording { timelapse.cancel() } else { timelapse.start() }
+            } label: {
+                ZStack {
+                    Circle().stroke(.white, lineWidth: 4).frame(width: 74, height: 74)
+                    if timelapse.isRecording {
+                        RoundedRectangle(cornerRadius: 6).fill(.red).frame(width: 30, height: 30)
+                    } else {
+                        Circle().fill(.red).frame(width: 60, height: 60)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var timelapseStatus: some View {
+        switch timelapse.state {
+        case .recording(let done, let total):
+            Text("Recording \(done)/\(total)…")
+                .font(.system(size: 12, design: .monospaced)).foregroundStyle(.white.opacity(0.85))
+        case .assembling:
+            Text("Assembling video…")
+                .font(.system(size: 12, design: .monospaced)).foregroundStyle(.white.opacity(0.85))
+        case .saved:
+            Label("Time-lapse saved", systemImage: "checkmark").font(.system(size: 12)).foregroundStyle(.green)
+        case .failed(let m):
+            Label(m, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(.red)
+        case .idle:
+            Color.clear.frame(height: 14)
+        }
+    }
+
+    private func stepper(_ label: String, _ value: String, _ down: @escaping () -> Void, up: @escaping () -> Void) -> some View {
+        VStack(spacing: 2) {
+            Text(label).font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+            HStack(spacing: 10) {
+                Button(action: down) { Image(systemName: "minus.circle") }
+                Text(value).font(.system(size: 13, weight: .semibold, design: .monospaced)).frame(minWidth: 44)
+                Button(action: up) { Image(systemName: "plus.circle") }
+            }
+            .foregroundStyle(.white)
+            .disabled(timelapse.isRecording)
+        }
     }
 
     private var stabilityChip: some View {

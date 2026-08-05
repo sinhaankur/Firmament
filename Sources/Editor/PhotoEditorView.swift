@@ -188,10 +188,13 @@ struct PhotoEditorView: View {
     /// Downsample for a snappy live preview.
     private func renderPreview() {
         let target = original.extent
+        guard !target.isEmpty, !target.isInfinite, !target.isNull else { return }
         let scale = min(1, 1200 / max(target.width, target.height))
         let scaled = original.transformed(by: .init(scaleX: scale, y: scale))
         let out = ImageProcessor.apply(adj, to: scaled)
-        if let cg = ctx.createCGImage(out, from: out.extent) {
+        // Some filters return an infinite extent — always crop back to the image.
+        let bounds = out.extent.isInfinite ? scaled.extent : out.extent
+        if let cg = ctx.createCGImage(out, from: bounds) {
             previewImage = UIImage(cgImage: cg)
         }
     }
@@ -200,7 +203,9 @@ struct PhotoEditorView: View {
     private func save() async {
         saving = true
         let out = ImageProcessor.apply(adj, to: original)
-        guard let cg = ctx.createCGImage(out, from: out.extent) else {
+        let bounds = out.extent.isInfinite ? original.extent : out.extent
+        guard !bounds.isEmpty, !bounds.isNull,
+              let cg = ctx.createCGImage(out, from: bounds) else {
             saving = false; savedOK = false; return
         }
         let image = UIImage(cgImage: cg)

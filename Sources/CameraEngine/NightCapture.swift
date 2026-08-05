@@ -37,6 +37,10 @@ final class NightCapture: NSObject, ObservableObject {
     /// Objects that were in frame at capture time (set by the caller).
     var inFrameAnnotation: [String] = []
 
+    /// When set, finished frames are routed here (for the time-lapse recorder)
+    /// instead of opening the editor.
+    var onFrameForTimelapse: ((CGImage) -> Void)?
+
     private let photoOutput = AVCapturePhotoOutput()
     private let ciContext = CIContext()
     private weak var controller: CameraEngine?
@@ -87,6 +91,15 @@ final class NightCapture: NSObject, ObservableObject {
     }
 
     // MARK: - Capture entry
+
+    /// Capture a single time-lapse frame: one processed frame at the device's
+    /// current (max) settings, routed to `onFrameForTimelapse`.
+    func captureTimelapseFrame() {
+        guard let device = controller?.videoDevice else { return }
+        pushToLimits(device)
+        stackTarget = 0
+        photoOutput.capturePhoto(with: makePhotoSettings(preferRAW: false), delegate: self)
+    }
 
     /// Capture the night sky. `stacked` decides how many frames to accumulate;
     /// callers pass a bigger count when the phone is tripod-steady.
@@ -310,6 +323,13 @@ extension NightCapture: AVCapturePhotoCaptureDelegate {
             return
         }
         Task { @MainActor in
+            // Time-lapse frame? Route to the recorder instead of the editor.
+            if let sink = self.onFrameForTimelapse {
+                if let cg = self.ciContext.createCGImage(ci, from: ci.extent) {
+                    sink(cg)
+                }
+                return
+            }
             if self.stackTarget > 1 {
                 self.accumulate(ci)
             } else {

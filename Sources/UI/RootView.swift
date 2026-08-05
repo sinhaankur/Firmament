@@ -1,12 +1,27 @@
 import SwiftUI
 import CoreImage
 import PhotosUI
+import UIKit
+import UniformTypeIdentifiers
 
-/// Identifiable wrapper so a freshly captured CIImage can drive a
-/// `fullScreenCover(item:)` into the editor.
+/// Identifiable wrapper so a captured or imported CIImage can drive a
+/// `fullScreenCover(item:)` into the editor, carrying any capture metadata.
 private struct EditableImage: Identifiable {
     let id = UUID()
     let image: CIImage
+    let meta: AutoDevelop.CaptureMeta
+}
+
+extension UIImage {
+    /// Return a copy with EXIF orientation baked into the pixels (orientation
+    /// = .up), so downstream CIImage/CGImage rendering isn't rotated/mirrored.
+    func normalizedUp() -> UIImage {
+        guard imageOrientation != .up else { return self }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = scale
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in draw(in: CGRect(origin: .zero, size: size)) }
+    }
 }
 
 /// The whole app: a full-screen camera sky with a minimal mode switcher.
@@ -19,6 +34,7 @@ struct RootView: View {
     @StateObject private var night = NightCapture()
     @StateObject private var advisor = CaptureAdvisor()
     @StateObject private var telescope = TelescopeEngine()
+    @StateObject private var timelapse = TimelapseRecorder()
 
     @State private var mode: Mode = .explore
     @State private var selected: SkyObject?
@@ -70,6 +86,7 @@ struct RootView: View {
                 if mode == .capture {
                     CaptureControls(night: night, motion: model.motion,
                                     camera: camera,
+                                    timelapse: timelapse,
                                     profile: camera.profile,
                                     advice: advisor.advice,
                                     inFrame: inFrameSubjects)
@@ -117,7 +134,7 @@ struct RootView: View {
             if hasOnboarded { startSensors() }
         }
         .onChange(of: camera.isConfigured) { _, ready in
-            if ready { night.attach(to: camera) }
+            if ready { night.attach(to: camera); timelapse.configure(night: night) }
         }
         .onChange(of: mode) { _, newMode in
             if newMode == .capture {
@@ -133,23 +150,11 @@ struct RootView: View {
             SettingsSheet(showConstellations: $showConstellations,
                           nightVision: $nightVision)
         }
-        .fullScreenCover(item: Binding(
-            get: { night.capturedForEditing.map { EditableImage(image: $0) } },
-            set: { if $0 == nil { night.capturedForEditing = nil } }
-        )) { editable in
-            PhotoEditorView(original: editable.image, meta: night.lastCaptureMeta) {
+        // A single editor cover for both freshly-captured and imported images —
+        // two stacked fullScreenCovers don't reliably present in SwiftUI.
+        .fullScreenCover(item: editingBinding) { editable in
+            PhotoEditorView(original: editable.image, meta: editable.meta) {
                 night.capturedForEditing = nil
-            }
-        }
-        // Editing an existing photo / timelapse frame picked from the library.
-        .fullScreenCover(item: Binding(
-            get: { importedForEditing.map { EditableImage(image: $0) } },
-            set: { if $0 == nil { importedForEditing = nil } }
-        )) { editable in
-            // No capture metadata for library images — AutoDevelop reasons from
-            // the pixels alone (mean luminance), which is exactly the case that
-            // inspired it: recovering an already-shot dark frame.
-            PhotoEditorView(original: editable.image, meta: .init()) {
                 importedForEditing = nil
             }
         }
@@ -160,14 +165,60 @@ struct RootView: View {
         .onDisappear { model.stop(); camera.stop(); telescope.disconnect() }
     }
 
-    /// Load a library-picked image into a CIImage and open the editor.
+    /// One binding that surfaces whichever image wants editing (captured or
+    /// imported), so there's a single presenter.
+    private var editingBinding: Binding<EditableImage?> {
+        Binding(
+            get: {
+                if let ci = night.capturedForEditing {
+                    return EditableImage(image: ci, meta: night.lastCaptureMeta)
+                }
+                if let ci = importedForEditing {
+                    return EditableImage(image: ci, meta: .init())
+                }
+                return nil
+            },
+            set: { newValue in
+                if newValue == nil {
+                    night.capturedForEditing = nil
+                    importedForEditing = nil
+                }
+            }
+        )
+    }
+
+    /// Load a library-picked photo OR video into a CIImage and open the editor.
+    /// Videos / time-lapses are frame-stacked into one brighter still. Photos are
+    /// orientation-corrected (HEIC/JPEG carry EXIF rotation CIImage ignores).
     private func loadPickedImage(_ item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              let ci = CIImage(data: data) else { return }
-        await MainActor.run {
-            importedForEditing = ci
-            libraryPick = nil
+        defer { Task { @MainActor in libraryPick = nil } }
+
+        // Video / time-lapse → stack frames into one still.
+        if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+            if let movie = try? await item.loadTransferable(type: VideoImporter.Movie.self),
+               let stacked = await VideoImporter().stackedFrame(from: movie.url),
+               !stacked.extent.isEmpty, !stacked.extent.isInfinite, !stacked.extent.isNull {
+                await MainActor.run { importedForEditing = stacked }
+            }
+            return
         }
+
+        // Photo → decode with orientation baked in.
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+        var ci: CIImage?
+        if let ui = UIImage(data: data) {
+            let fixed = ui.normalizedUp()
+            if let cg = fixed.cgImage {
+                ci = CIImage(cgImage: cg)
+            } else if let c = CIImage(image: fixed) {
+                ci = c
+            }
+        }
+        if ci == nil {
+            ci = CIImage(data: data, options: [.applyOrientationProperty: true])
+        }
+        guard let image = ci, !image.extent.isEmpty, !image.extent.isInfinite, !image.extent.isNull else { return }
+        await MainActor.run { importedForEditing = image }
     }
 
     /// Start the sensors + camera. Called after onboarding, so the system
@@ -253,8 +304,9 @@ struct RootView: View {
                     .padding(8)
                     .background(.black.opacity(0.35), in: Circle())
             }
-            // Open an existing photo / timelapse frame to auto-develop + edit.
-            PhotosPicker(selection: $libraryPick, matching: .images) {
+            // Open an existing photo, video, or timelapse to auto-develop + edit.
+            PhotosPicker(selection: $libraryPick,
+                         matching: .any(of: [.images, .videos])) {
                 Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 14))
                     .foregroundStyle(.white.opacity(0.7))
