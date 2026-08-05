@@ -134,6 +134,51 @@ final class CameraEngine: ObservableObject {
         zoomFactor = clamped
     }
 
+    // MARK: - Manual exposure (pro mode)
+
+    /// Whether the user has taken manual control of exposure/ISO.
+    @Published var manualExposure = false
+    /// The device's honest ISO + exposure-duration ranges (for slider bounds).
+    var isoRange: ClosedRange<Float> {
+        guard let f = videoDevice?.activeFormat else { return 100...3200 }
+        return f.minISO...f.maxISO
+    }
+    var exposureRange: ClosedRange<Double> {
+        guard let f = videoDevice?.activeFormat else { return 0.001...1 }
+        return f.minExposureDuration.seconds...f.maxExposureDuration.seconds
+    }
+
+    /// Apply a manual ISO + shutter (seconds), clamped to the device limits.
+    func setManualExposure(iso: Float, seconds: Double) {
+        guard let device = videoDevice else { return }
+        let clampedISO = min(max(isoRange.lowerBound, iso), isoRange.upperBound)
+        let clampedSec = min(max(exposureRange.lowerBound, seconds), exposureRange.upperBound)
+        let duration = CMTime(seconds: clampedSec, preferredTimescale: 1_000_000)
+        sessionQueue.async {
+            do {
+                try device.lockForConfiguration()
+                if device.isExposureModeSupported(.custom) {
+                    device.setExposureModeCustom(duration: duration, iso: clampedISO, completionHandler: nil)
+                }
+                device.unlockForConfiguration()
+            } catch {}
+        }
+    }
+
+    /// Return exposure to the automatic algorithm.
+    func setAutoExposure() {
+        guard let device = videoDevice else { return }
+        sessionQueue.async {
+            do {
+                try device.lockForConfiguration()
+                if device.isExposureModeSupported(.continuousAutoExposure) {
+                    device.exposureMode = .continuousAutoExposure
+                }
+                device.unlockForConfiguration()
+            } catch {}
+        }
+    }
+
     func stop() {
         sessionQueue.async { [weak self] in self?.session.stopRunning() }
     }

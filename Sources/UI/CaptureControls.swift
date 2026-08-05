@@ -20,6 +20,9 @@ struct CaptureControls: View {
     @State private var timerSeconds = 0        // self-timer: 0 / 3 / 10
     @State private var countdown: Int?         // live countdown display
     @State private var isTimelapse = false     // Photo | Time-lapse
+    @State private var manualMode = false       // Auto | Manual exposure
+    @State private var manualISO: Float = 1600
+    @State private var manualShutter: Double = 1.0   // seconds
     /// Target total integration time (seconds). "Auto" = 0 → use the profile's
     /// suggested depth. Otherwise total exposure is achieved by stacking frames,
     /// which is how we get well past the ~1s single-frame hardware ceiling.
@@ -61,7 +64,10 @@ struct CaptureControls: View {
                     }
                     if !inFrame.isEmpty { inFrameChips }
                     zoomPicker
-                    if !isTimelapse { exposurePicker }
+                    if !isTimelapse {
+                        manualExposureControls
+                        if !manualMode { exposurePicker }
+                    }
                     levelIndicator
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -337,6 +343,59 @@ struct CaptureControls: View {
                     .font(.system(size: 9)).foregroundStyle(.green.opacity(0.8))
             }
         }
+    }
+
+    // MARK: - Manual exposure (pro)
+
+    @ViewBuilder
+    private var manualExposureControls: some View {
+        VStack(spacing: 6) {
+            // Auto | Manual toggle.
+            HStack(spacing: 0) {
+                ForEach([("Auto", false), ("Manual", true)], id: \.0) { title, m in
+                    Button {
+                        manualMode = m
+                        if m { applyManual() } else { camera.setAutoExposure(); camera.manualExposure = false }
+                    } label: {
+                        Text(title)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity).padding(.vertical, 5)
+                            .background(manualMode == m ? Color.white : Color.clear, in: Capsule())
+                            .foregroundStyle(manualMode == m ? .black : .white)
+                    }
+                }
+            }
+            .padding(3).frame(maxWidth: 180)
+            .background(.black.opacity(0.4), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.15)))
+
+            if manualMode {
+                manualSlider("ISO", value: $manualISO,
+                             range: camera.isoRange.lowerBound...camera.isoRange.upperBound,
+                             display: "\(Int(manualISO))")
+                manualSlider("Shutter", value: Binding(
+                    get: { Float(manualShutter) },
+                    set: { manualShutter = Double($0) }),
+                             range: Float(camera.exposureRange.lowerBound)...Float(camera.exposureRange.upperBound),
+                             display: manualShutter >= 1 ? String(format: "%.1fs", manualShutter)
+                                                         : String(format: "1/%.0f", 1/manualShutter))
+            }
+        }
+    }
+
+    private func manualSlider(_ label: String, value: Binding<Float>,
+                              range: ClosedRange<Float>, display: String) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.system(size: 10)).foregroundStyle(.white.opacity(0.6)).frame(width: 48, alignment: .leading)
+            Slider(value: value, in: range) { editing in if !editing { applyManual() } }
+                .tint(.cyan)
+            Text(display).font(.system(size: 11, design: .monospaced)).foregroundStyle(.white).frame(width: 56, alignment: .trailing)
+        }
+    }
+
+    private func applyManual() {
+        camera.manualExposure = true
+        camera.setManualExposure(iso: manualISO, seconds: manualShutter)
     }
 
     // MARK: - Total-exposure picker

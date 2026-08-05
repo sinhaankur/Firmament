@@ -20,6 +20,7 @@ struct PhotoEditorView: View {
     @State private var savedOK: Bool?
     @State private var activeTool: Tool = .enhance
     @State private var autoExplanation: String?
+    @State private var histogram: (r: [CGFloat], g: [CGFloat], b: [CGFloat])?
 
     private let ctx = CIContext()
 
@@ -32,6 +33,11 @@ struct PhotoEditorView: View {
         VStack(spacing: 0) {
             header
             preview
+            if let h = histogram {
+                HistogramView(r: h.r, g: h.g, b: h.b)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+            }
             controls
         }
         .background(.black)
@@ -194,9 +200,12 @@ struct PhotoEditorView: View {
         let out = ImageProcessor.apply(adj, to: scaled)
         // Some filters return an infinite extent — always crop back to the image.
         let bounds = out.extent.isInfinite ? scaled.extent : out.extent
-        if let cg = ctx.createCGImage(out, from: bounds) {
+        let cropped = out.cropped(to: bounds)
+        if let cg = ctx.createCGImage(cropped, from: bounds) {
             previewImage = UIImage(cgImage: cg)
         }
+        // Update the histogram from the processed frame (pros judge by this).
+        histogram = HistogramComputer.compute(cropped)
     }
 
     /// Render the pipeline at full resolution and save.

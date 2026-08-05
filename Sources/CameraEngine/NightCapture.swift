@@ -143,14 +143,17 @@ final class NightCapture: NSObject, ObservableObject {
                 device.setFocusModeLocked(lensPosition: 1.0, completionHandler: nil)
             }
 
-            // Exposure: longest supported duration + top ISO for max light.
-            let fmt = device.activeFormat
-            let maxDur = fmt.maxExposureDuration
-            let maxISO = fmt.maxISO
-            if device.isExposureModeSupported(.custom) {
-                device.setExposureModeCustom(
-                    duration: maxDur, iso: maxISO, completionHandler: nil
-                )
+            // Exposure: in Auto mode, drive to the longest duration + top ISO
+            // for maximum light. In Manual mode, leave the user's exposure alone.
+            if controller?.manualExposure != true {
+                let fmt = device.activeFormat
+                let maxDur = fmt.maxExposureDuration
+                let maxISO = fmt.maxISO
+                if device.isExposureModeSupported(.custom) {
+                    device.setExposureModeCustom(
+                        duration: maxDur, iso: maxISO, completionHandler: nil
+                    )
+                }
             }
 
             // White balance: lock to a neutral daylight point (~5200K) so the
