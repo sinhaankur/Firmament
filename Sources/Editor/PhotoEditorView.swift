@@ -26,6 +26,9 @@ struct PhotoEditorView: View {
     @State private var zoom: CGFloat = 1
     @GestureState private var pinch: CGFloat = 1
     @State private var showCrop = false
+    @State private var sharpness: SharpnessScore?
+    @State private var splitCompare = false      // draggable before/after split
+    @State private var splitX: CGFloat = 0.5
 
     private let ctx = CIContext()
 
@@ -77,11 +80,64 @@ struct PhotoEditorView: View {
         }
     }
 
+    @State private var aiThinking = false
+
+    /// AI-driven enhance (Apple Intelligence): start from the deterministic
+    /// AutoDevelop, then let the on-device model refine the develop parameters —
+    /// each value clamped to a safe range. Falls back to AutoDevelop if the model
+    /// is unavailable, so the button always does something useful.
+    private func aiEnhance() {
+        let base = AutoDevelop.develop(original, meta: meta)
+        adj = base.adjustments
+        renderPreview()
+
+        guard OnDeviceLLM.isAvailable else {
+            autoExplanation = base.explanation + " (on-device enhance)"
+            return
+        }
+        aiThinking = true
+        let stats = base.explanation
+            + String(format: " mean-luma=%.3f", base.meanLuma)
+        Task {
+            let rec = await llm.enhanceAdjustments(stats: stats)
+            await MainActor.run {
+                aiThinking = false
+                guard let rec else { return }
+                applyAIRecommendation(rec)
+                autoExplanation = "AI-enhanced on-device — refined the develop for this frame."
+            }
+        }
+    }
+
+    /// Merge the model's recommended values into `adj`, clamped to safe ranges.
+    private func applyAIRecommendation(_ r: [String: Double]) {
+        func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(hi, max(lo, v)) }
+        if let v = r["exposure"]   { adj.exposure = clamp(v, -2, 2) }
+        if let v = r["contrast"]   { adj.contrast = clamp(v, 0.8, 1.3) }
+        if let v = r["shadows"]    { adj.shadows = clamp(v, 0, 0.6) }
+        if let v = r["highlights"] { adj.highlights = clamp(v, 0.5, 1) }
+        if let v = r["dehaze"]     { adj.dehaze = clamp(v, 0, 1) }
+        if let v = r["vibrance"]   { adj.vibrance = clamp(v, 0, 0.6) }
+        if let v = r["starboost"]  { adj.starBoost = clamp(v, 0, 0.9) }
+        renderPreview()
+    }
+
     private var header: some View {
         HStack {
             Button("Discard", role: .destructive) { onDone() }
             Spacer()
-            compareButton
+            HStack(spacing: 14) {
+                compareButton
+                // Split before/after toggle.
+                Button {
+                    withAnimation { splitCompare.toggle() }
+                } label: {
+                    Image(systemName: "square.split.2x1")
+                        .font(.system(size: 17))
+                        .foregroundStyle(splitCompare ? .cyan : .white.opacity(0.7))
+                }
+                .accessibilityLabel("Split before and after")
+            }
             Spacer()
             Button {
                 Task { await save() }
@@ -97,27 +153,54 @@ struct PhotoEditorView: View {
 
     private var preview: some View {
         ZStack {
-            // Show the untouched original while pressing "compare".
-            let shown = showingOriginal ? (originalPreview ?? previewImage) : previewImage
-            if let img = shown {
-                Image(uiImage: img)
-                    .resizable().scaledToFit()
-                    .scaleEffect(zoom * pinch)
-                    .gesture(
-                        MagnificationGesture()
-                            .updating($pinch) { v, s, _ in s = v }
-                            .onEnded { v in zoom = min(6, max(1, zoom * v)) }
-                    )
-                    .onTapGesture(count: 2) {           // double-tap resets zoom
-                        withAnimation { zoom = 1 }
+            if splitCompare, let edited = previewImage, let orig = originalPreview {
+                // Draggable before/after split: original on the left of the
+                // divider, edited on the right.
+                GeometryReader { geo in
+                    ZStack {
+                        Image(uiImage: orig).resizable().scaledToFit()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                        Image(uiImage: edited).resizable().scaledToFit()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .mask(alignment: .trailing) {
+                                Rectangle().frame(width: geo.size.width * (1 - splitX))
+                            }
+                        // Divider handle.
+                        Rectangle().fill(.white).frame(width: 2)
+                            .position(x: geo.size.width * splitX, y: geo.size.height / 2)
+                        Circle().fill(.white).frame(width: 26, height: 26)
+                            .overlay(Image(systemName: "arrow.left.and.right")
+                                .font(.system(size: 11)).foregroundStyle(.black))
+                            .position(x: geo.size.width * splitX, y: geo.size.height / 2)
                     }
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture().onChanged { g in
+                            splitX = min(1, max(0, g.location.x / geo.size.width))
+                        }
+                    )
+                }
             } else {
-                ProgressView().tint(.white)
+                // Show the untouched original while holding "compare".
+                let shown = showingOriginal ? (originalPreview ?? previewImage) : previewImage
+                if let img = shown {
+                    Image(uiImage: img)
+                        .resizable().scaledToFit()
+                        .scaleEffect(zoom * pinch)
+                        .gesture(
+                            MagnificationGesture()
+                                .updating($pinch) { v, s, _ in s = v }
+                                .onEnded { v in zoom = min(6, max(1, zoom * v)) }
+                        )
+                        .onTapGesture(count: 2) { withAnimation { zoom = 1 } }
+                } else {
+                    ProgressView().tint(.white)
+                }
             }
 
-            // Top-right badges.
+            // Top badges: BEFORE (left), focus score + zoom (right).
             VStack {
-                HStack {
+                HStack(alignment: .top) {
                     if showingOriginal {
                         Text("BEFORE")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -126,12 +209,15 @@ struct PhotoEditorView: View {
                             .foregroundStyle(.white)
                     }
                     Spacer()
-                    if zoom > 1.01 {
-                        Text(String(format: "%.0f×", zoom * pinch))
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(.black.opacity(0.6), in: Capsule())
-                            .foregroundStyle(.cyan)
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if let s = sharpness { focusBadge(s) }
+                        if zoom > 1.01 {
+                            Text(String(format: "%.0f×", zoom * pinch))
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(.black.opacity(0.6), in: Capsule())
+                                .foregroundStyle(.cyan)
+                        }
                     }
                 }
                 Spacer()
@@ -150,6 +236,26 @@ struct PhotoEditorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .contentShape(Rectangle())
+    }
+
+    /// Focus / star-sharpness badge (0–100 + verdict).
+    private func focusBadge(_ s: SharpnessScore) -> some View {
+        let color: Color = {
+            switch s.color {
+            case .soft: return .orange
+            case .good: return .yellow
+            case .sharp: return .green
+            }
+        }()
+        return HStack(spacing: 5) {
+            Image(systemName: "scope").font(.system(size: 10))
+            Text("\(s.value)").font(.system(size: 11, weight: .bold, design: .monospaced))
+            Text(s.verdict).font(.system(size: 9))
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.black.opacity(0.6), in: Capsule())
+        .foregroundStyle(color)
+        .accessibilityLabel("Focus score \(s.value) out of 100, \(s.verdict)")
     }
 
     /// A press-and-hold "compare" button for before/after.
@@ -188,20 +294,27 @@ struct PhotoEditorView: View {
                 .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             }
 
-            // Enhance + Crop row.
+            // AI Enhance + Crop row.
             HStack(spacing: 8) {
                 Button {
-                    withAnimation { adj.starBoost = adj.starBoost > 0 ? 0 : 0.7 }
+                    aiEnhance()
                 } label: {
-                    Label(adj.starBoost > 0 ? "Enhance on" : "Enhance",
-                          systemImage: "sparkles")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(adj.starBoost > 0 ? Color.white : Color.white.opacity(0.12),
-                                    in: RoundedRectangle(cornerRadius: 12))
-                        .foregroundStyle(adj.starBoost > 0 ? .black : .white)
+                    HStack(spacing: 6) {
+                        if aiThinking { ProgressView().tint(.black).scaleEffect(0.7) }
+                        else { Image(systemName: "wand.and.stars.inverse") }
+                        Text(OnDeviceLLM.isAvailable ? "AI Enhance" : "Auto Enhance")
+                    }
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(
+                        LinearGradient(colors: [Color(red: 0.55, green: 0.4, blue: 1),
+                                                Color(red: 0.35, green: 0.6, blue: 1)],
+                                       startPoint: .leading, endPoint: .trailing),
+                        in: RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(.white)
                 }
+                .disabled(aiThinking)
                 Button {
                     withAnimation { showCrop.toggle() }
                 } label: {
@@ -365,8 +478,9 @@ struct PhotoEditorView: View {
         if let cg = ctx.createCGImage(cropped, from: bounds) {
             previewImage = UIImage(cgImage: cg)
         }
-        // Update the histogram from the processed frame (pros judge by this).
+        // Update the histogram + focus score from the processed frame.
         histogram = HistogramComputer.compute(cropped)
+        sharpness = SharpnessComputer.score(cropped)
     }
 
     /// Render the pipeline at full resolution and save.

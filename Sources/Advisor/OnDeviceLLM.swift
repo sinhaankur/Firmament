@@ -77,6 +77,40 @@ final class OnDeviceLLM {
         return await run(prompt: prompt)
     }
 
+    /// AI-driven enhance: given the frame's measured statistics, ask the
+    /// on-device model to recommend develop adjustments. It returns a compact
+    /// `key=value` line we parse; anything it omits or gets wrong is clamped to a
+    /// safe range, and if the model is unavailable the caller falls back to the
+    /// deterministic AutoDevelop. The model *advises*; the engine applies + clamps.
+    ///
+    /// - Parameter stats: measured facts (mean luminance, clipping, is-night, etc.)
+    /// - Returns: a dictionary of adjustment keys → values, or nil.
+    func enhanceAdjustments(stats: String) async -> [String: Double]? {
+        let prompt = """
+        You are auto-developing a night-sky photo. Measured facts:
+        \(stats)
+        Recommend gentle develop settings as ONE line of key=value pairs, using
+        only these keys and ranges: exposure(-2..2), contrast(0.8..1.3),
+        shadows(0..0.6), highlights(0.5..1), dehaze(0..1), vibrance(0..0.6),
+        starBoost(0..0.9). Favour recovering faint stars without clipping or graying
+        the sky. Example: exposure=1.2 contrast=1.05 shadows=0.3 dehaze=0.4 starBoost=0.6
+        Reply with the key=value line only, no prose.
+        """
+        guard let reply = await run(prompt: prompt) else { return nil }
+        return Self.parseKeyValues(reply)
+    }
+
+    /// Parse a "k=v k=v" reply into a dictionary of doubles.
+    static func parseKeyValues(_ s: String) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for token in s.split(whereSeparator: { $0 == " " || $0 == "," || $0 == "\n" }) {
+            let parts = token.split(separator: "=")
+            guard parts.count == 2, let v = Double(parts[1]) else { continue }
+            out[String(parts[0]).lowercased()] = v
+        }
+        return out
+    }
+
     // MARK: - Core (shared session + timeout)
 
     private func run(prompt: String) async -> String? {

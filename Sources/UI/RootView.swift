@@ -235,10 +235,19 @@ struct RootView: View {
                 loaded = await VideoImporter().stackedFrame(from: movie.url)
             }
         } else {
-            // Photo → try Data (works for iCloud-downloaded assets), decode with
-            // orientation baked in.
+            let isRAW = item.supportedContentTypes.contains {
+                $0.conforms(to: .rawImage) || $0.identifier.contains("dng")
+            }
             if let data = try? await item.loadTransferable(type: Data.self) {
-                if let ui = UIImage(data: data) {
+                // RAW / ProRAW (DNG) → decode via CIRAWFilter for full editing
+                // latitude (the real reason to shoot RAW).
+                if isRAW,
+                   let raw = CIRAWFilter(imageData: data, identifierHint: nil),
+                   let out = raw.outputImage {
+                    loaded = out
+                }
+                // Otherwise a normal photo: decode with orientation baked in.
+                if loaded == nil, let ui = UIImage(data: data) {
                     let fixed = ui.normalizedUp()
                     if let cg = fixed.cgImage { loaded = CIImage(cgImage: cg) }
                     else { loaded = CIImage(image: fixed) }
@@ -354,7 +363,7 @@ struct RootView: View {
             .accessibilityLabel("Telescope")
             // Open an existing photo, video, or timelapse to auto-develop + edit.
             PhotosPicker(selection: $libraryPick,
-                         matching: .any(of: [.images, .videos])) {
+                         matching: .any(of: [.images, .videos])) {   // .images includes RAW/DNG
                 Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 14))
                     .foregroundStyle(.white.opacity(0.7))

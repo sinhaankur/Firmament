@@ -75,6 +75,20 @@ final class CaptureAndCatalogTests: XCTestCase {
         XCTAssertFalse(g.isIdentity)
     }
 
+    /// A flat (edgeless) image scores low sharpness; the computer returns a
+    /// value in range and never crashes.
+    func testSharpnessScoreInRange() {
+        let flat = CIImage(color: .gray).cropped(to: CGRect(x: 0, y: 0, width: 128, height: 128))
+        let score = SharpnessComputer.score(flat)
+        XCTAssertNotNil(score)
+        if let s = score {
+            XCTAssertGreaterThanOrEqual(s.value, 0)
+            XCTAssertLessThanOrEqual(s.value, 100)
+            XCTAssertLessThan(s.value, 40, "a flat image has no edges → low score")
+            XCTAssertFalse(s.verdict.isEmpty)
+        }
+    }
+
     /// AutoDevelop on a synthetic dark frame recommends lifting exposure.
     func testAutoDevelopLiftsDarkFrame() {
         // A 4×4 nearly-black image.
