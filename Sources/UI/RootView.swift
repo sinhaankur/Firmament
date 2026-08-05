@@ -35,6 +35,7 @@ struct RootView: View {
     @StateObject private var advisor = CaptureAdvisor()
     @StateObject private var telescope = TelescopeEngine()
     @StateObject private var timelapse = TimelapseRecorder()
+    @StateObject private var peaking = FocusPeakingController()
 
     @State private var mode: Mode = .explore
     @State private var selected: SkyObject?
@@ -48,6 +49,7 @@ struct RootView: View {
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
     @AppStorage("nightVision") private var nightVision = false
+    @State private var peakingOn = false
     private let weather = WeatherProvider()
 
     var body: some View {
@@ -58,6 +60,11 @@ struct RootView: View {
                     .ignoresSafeArea()
             } else {
                 Color.black.ignoresSafeArea()
+            }
+
+            // Focus-peaking overlay (Capture mode, when enabled).
+            if mode == .capture && peakingOn {
+                FocusPeakingOverlay(controller: peaking)
             }
 
             // Celestial overlay (Explore + Spot both show it).
@@ -92,7 +99,8 @@ struct RootView: View {
                                     timelapse: timelapse,
                                     profile: camera.profile,
                                     advice: advisor.advice,
-                                    inFrame: inFrameSubjects)
+                                    inFrame: inFrameSubjects,
+                                    peakingOn: $peakingOn)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 modeSwitcher
@@ -137,7 +145,11 @@ struct RootView: View {
             if hasOnboarded { startSensors() }
         }
         .onChange(of: camera.isConfigured) { _, ready in
-            if ready { night.attach(to: camera); timelapse.configure(night: night) }
+            if ready {
+                night.attach(to: camera)
+                timelapse.configure(night: night)
+                peaking.attach(to: camera.session)
+            }
         }
         .onChange(of: mode) { _, newMode in
             if newMode == .capture {

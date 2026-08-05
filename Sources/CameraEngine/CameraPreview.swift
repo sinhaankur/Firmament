@@ -134,6 +134,40 @@ final class CameraEngine: ObservableObject {
         zoomFactor = clamped
     }
 
+    // MARK: - Manual focus (pro mode)
+
+    /// Whether the user has taken manual focus control.
+    @Published var manualFocus = false
+    /// Lens position 0 (near) … 1 (infinity). Stars want ~1.0.
+    @Published var lensPosition: Float = 1.0
+
+    /// Lock focus at a specific lens position (1.0 ≈ infinity, for stars).
+    func setManualFocus(_ position: Float) {
+        guard let device = videoDevice, device.isFocusModeSupported(.locked) else { return }
+        let p = min(1, max(0, position))
+        sessionQueue.async {
+            do {
+                try device.lockForConfiguration()
+                device.setFocusModeLocked(lensPosition: p, completionHandler: nil)
+                device.unlockForConfiguration()
+            } catch {}
+        }
+        lensPosition = p
+    }
+
+    func setAutoFocus() {
+        guard let device = videoDevice else { return }
+        sessionQueue.async {
+            do {
+                try device.lockForConfiguration()
+                if device.isFocusModeSupported(.continuousAutoFocus) {
+                    device.focusMode = .continuousAutoFocus
+                }
+                device.unlockForConfiguration()
+            } catch {}
+        }
+    }
+
     // MARK: - Manual exposure (pro mode)
 
     /// Whether the user has taken manual control of exposure/ISO.

@@ -16,6 +16,8 @@ struct CaptureControls: View {
     var advice: String?
     /// Bright objects currently in frame (from the sky engine), shown as chips.
     var inFrame: [String] = []
+    /// Focus-peaking toggle (bound to the parent).
+    @Binding var peakingOn: Bool
 
     @State private var timerSeconds = 0        // self-timer: 0 / 3 / 10
     @State private var countdown: Int?         // live countdown display
@@ -68,6 +70,7 @@ struct CaptureControls: View {
                         manualExposureControls
                         if !manualMode { exposurePicker }
                     }
+                    focusControls
                     levelIndicator
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -341,6 +344,43 @@ struct CaptureControls: View {
             } else if camera.zoomFactor > 1.01 {
                 Text("Optical zoom — no quality loss.")
                     .font(.system(size: 9)).foregroundStyle(.green.opacity(0.8))
+            }
+        }
+    }
+
+    // MARK: - Focus (manual focus + peaking)
+
+    @State private var manualFocusMode = false
+
+    @ViewBuilder
+    private var focusControls: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("Focus").font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Toggle("Peaking", isOn: $peakingOn)
+                    .labelsHidden()
+                Text("Peaking").font(.system(size: 10)).foregroundStyle(peakingOn ? .pink : .white.opacity(0.5))
+                Spacer()
+                Button(manualFocusMode ? "Auto" : "Manual") {
+                    manualFocusMode.toggle()
+                    if manualFocusMode { camera.manualFocus = true; camera.setManualFocus(camera.lensPosition) }
+                    else { camera.manualFocus = false; camera.setAutoFocus() }
+                }
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.cyan)
+            }
+            if manualFocusMode {
+                HStack(spacing: 8) {
+                    Image(systemName: "mountain.2").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
+                    Slider(value: Binding(
+                        get: { camera.lensPosition },
+                        set: { camera.setManualFocus($0) }), in: 0...1)
+                        .tint(.cyan)
+                    Text("∞").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
+                }
+                Text("For stars, slide toward ∞ and use Peaking to confirm sharp points.")
+                    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.45))
+                    .multilineTextAlignment(.center)
             }
         }
     }
