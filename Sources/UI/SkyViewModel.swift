@@ -14,8 +14,15 @@ final class SkyViewModel: ObservableObject {
     @Published var date: Date = Date()
     @Published var usingSimulatedLocation = false
 
+    /// The ISS, tracked live from a bundled TLE via SGP4 (nil while below the
+    /// horizon or if the observer isn't known yet).
+    @Published private(set) var iss: SkyObject?
+    /// Next visible ISS pass for the observer.
+    @Published private(set) var nextIssPass: (start: Date, peakAltitude: Double, peakAzimuth: Double)?
+
     let location = LocationService()
     let motion = MotionService()
+    private let issTracker = ISSTracker()
 
     private var timer: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
@@ -56,7 +63,34 @@ final class SkyViewModel: ObservableObject {
             usingSimulatedLocation = true
         }
         let engine = NightSkyEngine(observer: observer)
-        objects = engine.allObjects(at: date, aboveHorizonOnly: false)
+        var all = engine.allObjects(at: date, aboveHorizonOnly: false)
+        recomputeISS(observer: observer)
+        if let iss { all.append(iss) }   // show the ISS as a label too
+        objects = all
+    }
+
+    /// Resolve the ISS look angle for the overlay + Spot mode.
+    private func recomputeISS(observer: NightSkyEngine.Observer) {
+        guard let look = issTracker.lookAngle(
+            latitude: observer.latitude, longitude: observer.longitude, at: date
+        ) else { iss = nil; return }
+
+        iss = SkyObject(
+            id: "sat.iss", name: "ISS", kind: .satellite,
+            raDeg: 0, decDeg: 0,
+            altitude: look.altitude, azimuth: look.azimuth,
+            magnitude: -3.5,
+            distanceText: String(format: "%.0f km away", look.rangeKm),
+            blurb: "International Space Station — from a stored orbit."
+        )
+
+        // Refresh the next-pass scan occasionally (cheap enough at 0.2 Hz here,
+        // but only recompute when we don't have one or it has elapsed).
+        if nextIssPass == nil || (nextIssPass?.start ?? date) < date {
+            nextIssPass = issTracker.nextPass(
+                latitude: observer.latitude, longitude: observer.longitude, from: date
+            )
+        }
     }
 
     /// Current pointing for the projection, straight from motion.

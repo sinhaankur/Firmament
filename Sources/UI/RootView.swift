@@ -22,6 +22,9 @@ struct RootView: View {
     @State private var mode: Mode = .explore
     @State private var selected: SkyObject?
     @State private var showTelescope = false
+    @State private var showSettings = false
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
+    @AppStorage("showConstellations") private var showConstellations = true
     private let weather = WeatherProvider()
 
     var body: some View {
@@ -39,6 +42,7 @@ struct RootView: View {
                 SkyOverlayView(
                     model: model,
                     selected: $selected,
+                    showConstellations: showConstellations,
                     horizontalFovDegrees: camera.horizontalFovDegrees
                 )
                 .ignoresSafeArea()
@@ -47,6 +51,10 @@ struct RootView: View {
             VStack {
                 topBar
                 Spacer()
+                if mode == .spot {
+                    SpotView(model: model)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 if mode == .capture {
                     CaptureControls(night: night, motion: model.motion,
                                     profile: camera.profile,
@@ -67,12 +75,21 @@ struct RootView: View {
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+
+            // First-launch onboarding + permission priming (over everything).
+            if !hasOnboarded {
+                OnboardingView { hasOnboarded = true; startSensors() }
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
         }
         .animation(.easeInOut(duration: 0.25), value: mode)
         .animation(.easeInOut(duration: 0.25), value: selected?.id)
+        .animation(.easeInOut(duration: 0.35), value: hasOnboarded)
         .onAppear {
-            model.start()
-            camera.configure()
+            // Only start sensors (and trigger permission prompts) once the user
+            // has been primed by onboarding.
+            if hasOnboarded { startSensors() }
         }
         .onChange(of: camera.isConfigured) { _, ready in
             if ready { night.attach(to: camera) }
@@ -84,6 +101,9 @@ struct RootView: View {
             TelescopeSheet(telescope: telescope)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet(showConstellations: $showConstellations)
+        }
         .fullScreenCover(item: Binding(
             get: { night.capturedForEditing.map { EditableImage(image: $0) } },
             set: { if $0 == nil { night.capturedForEditing = nil } }
@@ -93,6 +113,13 @@ struct RootView: View {
             }
         }
         .onDisappear { model.stop(); camera.stop(); telescope.disconnect() }
+    }
+
+    /// Start the sensors + camera. Called after onboarding, so the system
+    /// permission prompts appear only once the user understands why.
+    private func startSensors() {
+        model.start()
+        camera.configure()
     }
 
     // MARK: - Capture advice
@@ -150,6 +177,15 @@ struct RootView: View {
                 Image(systemName: telescope.isConnected ? "scope" : "antenna.radiowaves.left.and.right")
                     .font(.system(size: 14))
                     .foregroundStyle(telescope.isConnected ? .green : .white.opacity(0.7))
+                    .padding(8)
+                    .background(.black.opacity(0.35), in: Circle())
+            }
+            Button {
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white.opacity(0.7))
                     .padding(8)
                     .background(.black.opacity(0.35), in: Circle())
             }
