@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import Foundation
 
 /// Core astronomical math for turning a place + time + celestial coordinate

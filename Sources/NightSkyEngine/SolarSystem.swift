@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import Foundation
 
 /// Low-precision positions for the Sun, Moon, and naked-eye planets.

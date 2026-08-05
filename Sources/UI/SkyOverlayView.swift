@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import SwiftUI
 
 /// Draws celestial labels over the camera feed, positioned by the live

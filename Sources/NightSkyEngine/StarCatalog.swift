@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import Foundation
 
 /// A single star. Positions are J2000 right ascension / declination (degrees)

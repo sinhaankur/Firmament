@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import SwiftUI
 
 /// The Snapchat-clean capture surface: one big shutter, a stability chip, and a
@@ -479,6 +480,18 @@ struct CaptureControls: View {
                     .font(.system(size: 9)).foregroundStyle(.white.opacity(0.45))
                     .multilineTextAlignment(.center)
             }
+
+            // Dithering toggle.
+            HStack {
+                Text("Dither").font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { night.ditherEnabled },
+                    set: { night.ditherEnabled = $0 }))
+                    .labelsHidden()
+            }
+            Text("Shifts each frame slightly so pattern noise averages away.")
+                .font(.system(size: 9)).foregroundStyle(.white.opacity(0.4))
         }
     }
 

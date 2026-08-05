@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import Foundation
 
 /// A body we can point at. Earth is included only because the planet ephemeris

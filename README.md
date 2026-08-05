@@ -10,7 +10,7 @@
 [![Platform](https://img.shields.io/badge/platform-iOS%2017%2B-lightgrey.svg)](#requirements)
 [![Swift](https://img.shields.io/badge/Swift-6-orange.svg)](#requirements)
 [![Custom code](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#license--attribution)
-[![Tests](https://img.shields.io/badge/tests-22%20passing-success.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-23%20passing-success.svg)](#tests)
 [![Open source](https://img.shields.io/badge/open%20source-yes-success.svg)](#contributing)
 
 A native iOS app that fuses the phone's camera, LiDAR, GPS, compass, and motion

@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import Foundation
 import AVFoundation
 import CoreImage
@@ -52,6 +53,9 @@ final class NightCapture: NSObject, ObservableObject {
     var capturingDark = false
     /// User toggle for applying subtraction to real captures.
     var darkSubtractionEnabled = false
+    /// Dithering: nudge each light frame by a tiny random offset before stacking
+    /// so residual fixed-pattern / walking noise averages out. On by default.
+    var ditherEnabled = true
 
     private let photoOutput = AVCapturePhotoOutput()
     private let ciContext = CIContext()
@@ -282,9 +286,14 @@ final class NightCapture: NSObject, ObservableObject {
     /// matching lands in Phase 3; on a tripod frames are already registered.)
     private func accumulate(_ rawFrame: CIImage) {
         // Dark-frame subtraction: remove thermal noise + hot pixels per light.
-        let frame = (darkSubtractionEnabled && darkStore?.isCalibrated == true)
+        var frame = (darkSubtractionEnabled && darkStore?.isCalibrated == true)
             ? (darkStore?.subtract(from: rawFrame) ?? rawFrame)
             : rawFrame
+        // Dithering: nudge this frame by a tiny random offset so fixed-pattern /
+        // walking noise averages out across the stack instead of reinforcing.
+        if ditherEnabled {
+            frame = Self.dither(frame)
+        }
         stackCount += 1
         if let acc = stackAccumulator {
             let weightNew = 1.0 / Double(stackCount)
@@ -299,6 +308,19 @@ final class NightCapture: NSObject, ObservableObject {
         }
         state = .capturing(progress: Double(stackCount) / Double(stackTarget))
         captureNextStackFrame()
+    }
+
+    /// Nudge a frame by a small random translation (±1.5 px) then re-origin, so
+    /// residual fixed-pattern noise decorrelates across the stack. The offset is
+    /// tiny enough that star signal still averages cleanly on a steady tripod.
+    static func dither(_ image: CIImage) -> CIImage {
+        let dx = CGFloat.random(in: -1.5...1.5)
+        let dy = CGFloat.random(in: -1.5...1.5)
+        // Clamp first so the shift can't uncover an edge, then crop back to the
+        // exact original extent — the frame stays the same size for aligned blend.
+        let shifted = image.clampedToExtent()
+            .transformed(by: CGAffineTransform(translationX: dx, y: dy))
+        return shifted.cropped(to: image.extent)
     }
 
     private func finishStack() {

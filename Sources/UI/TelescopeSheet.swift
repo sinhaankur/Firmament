@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import SwiftUI
 
 /// Connect + monitor a Celestron mount. Join the mount's WiFi network

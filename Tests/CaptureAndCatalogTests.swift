@@ -1,3 +1,4 @@
+//  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import XCTest
 @testable import NightSky
 
@@ -73,6 +74,18 @@ final class CaptureAndCatalogTests: XCTestCase {
 
         XCTAssertTrue(Geometry().isIdentity)
         XCTAssertFalse(g.isIdentity)
+    }
+
+    /// Dithering keeps the frame extent identical (so blending stays aligned)
+    /// and doesn't crash.
+    @MainActor
+    func testDitherKeepsExtent() {
+        let src = CIImage(color: .gray).cropped(to: CGRect(x: 0, y: 0, width: 100, height: 60))
+        for _ in 0..<20 {
+            let out = NightCapture.dither(src)
+            XCTAssertEqual(out.extent.width, 100, accuracy: 0.5)
+            XCTAssertEqual(out.extent.height, 60, accuracy: 0.5)
+        }
     }
 
     /// A bright "dark" (lens not covered) is rejected; a genuine near-black one
