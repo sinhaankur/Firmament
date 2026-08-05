@@ -25,8 +25,28 @@ struct ImageAdjustments: Equatable {
     /// ones — nebula/aurora colour without going garish. 0 = neutral.
     var vibrance: Double = 0
 
+    /// Geometry: rotation, straighten, and crop. Applied before tonal edits.
+    var geometry = Geometry()
+
     static let neutral = ImageAdjustments()
     var isNeutral: Bool { self == .neutral }
+}
+
+/// Crop / rotate / straighten. Non-destructive: stored as parameters and applied
+/// in the pipeline, so it stays editable until save.
+struct Geometry: Equatable {
+    /// 90° rotations, 0…3 (clockwise).
+    var quarterTurns: Int = 0
+    /// Fine straighten angle in degrees, −15…+15 (levels the horizon).
+    var straightenDegrees: Double = 0
+    /// Crop rectangle in *normalized* coordinates of the rotated image
+    /// (0…1, origin bottom-left to match CoreImage). Full frame by default.
+    var cropNormalized: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+
+    var isIdentity: Bool {
+        quarterTurns == 0 && straightenDegrees == 0 &&
+        cropNormalized == CGRect(x: 0, y: 0, width: 1, height: 1)
+    }
 }
 
 /// Applies `ImageAdjustments` to a CIImage. Kept as a pure transform so the
@@ -36,6 +56,12 @@ enum ImageProcessor {
 
     static func apply(_ adj: ImageAdjustments, to input: CIImage) -> CIImage {
         var image = input
+
+        // Geometry first (rotate / straighten / crop), so everything downstream
+        // — histogram, tonal edits, save — sees the framed image.
+        if !adj.geometry.isIdentity {
+            image = applyGeometry(adj.geometry, to: image)
+        }
 
         // Exposure (EV).
         if adj.exposure != 0 {
@@ -92,6 +118,49 @@ enum ImageProcessor {
         // while holding the black point, so stars emerge without graying the sky.
         if adj.starBoost > 0 {
             image = starStretch(image, amount: adj.starBoost)
+        }
+
+        return image
+    }
+
+    /// Apply rotation, straighten, and crop. Order: 90° turns → fine straighten
+    /// rotation about the centre → crop (normalized rect of the rotated image).
+    /// The result is re-origined to (0,0) so downstream extents behave.
+    static func applyGeometry(_ g: Geometry, to input: CIImage) -> CIImage {
+        var image = input
+
+        // 90° turns.
+        if g.quarterTurns % 4 != 0 {
+            let angle = -CGFloat(g.quarterTurns % 4) * .pi / 2   // clockwise
+            image = image.transformed(by: CGAffineTransform(rotationAngle: angle))
+            image = image.transformed(by: CGAffineTransform(
+                translationX: -image.extent.origin.x, y: -image.extent.origin.y))
+        }
+
+        // Fine straighten (rotate about centre, then re-origin).
+        if g.straightenDegrees != 0 {
+            let a = CGFloat(-g.straightenDegrees * .pi / 180)
+            let c = CGPoint(x: image.extent.midX, y: image.extent.midY)
+            var t = CGAffineTransform(translationX: c.x, y: c.y)
+            t = t.rotated(by: a)
+            t = t.translatedBy(x: -c.x, y: -c.y)
+            image = image.transformed(by: t)
+            image = image.transformed(by: CGAffineTransform(
+                translationX: -image.extent.origin.x, y: -image.extent.origin.y))
+        }
+
+        // Crop (normalized rect → pixels of the current extent).
+        let e = image.extent
+        if g.cropNormalized != CGRect(x: 0, y: 0, width: 1, height: 1),
+           !e.isInfinite, !e.isEmpty {
+            let rect = CGRect(
+                x: e.origin.x + g.cropNormalized.origin.x * e.width,
+                y: e.origin.y + g.cropNormalized.origin.y * e.height,
+                width: g.cropNormalized.width * e.width,
+                height: g.cropNormalized.height * e.height)
+            image = image.cropped(to: rect)
+            image = image.transformed(by: CGAffineTransform(
+                translationX: -image.extent.origin.x, y: -image.extent.origin.y))
         }
 
         return image

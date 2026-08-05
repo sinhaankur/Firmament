@@ -25,6 +25,7 @@ struct PhotoEditorView: View {
     @State private var showingOriginal = false
     @State private var zoom: CGFloat = 1
     @GestureState private var pinch: CGFloat = 1
+    @State private var showCrop = false
 
     private let ctx = CIContext()
 
@@ -187,19 +188,34 @@ struct PhotoEditorView: View {
                 .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             }
 
-            // One-tap astro enhance.
-            Button {
-                withAnimation { adj.starBoost = adj.starBoost > 0 ? 0 : 0.7 }
-            } label: {
-                Label(adj.starBoost > 0 ? "Enhance on" : "Enhance (reveal faint stars)",
-                      systemImage: "sparkles")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .background(adj.starBoost > 0 ? Color.white : Color.white.opacity(0.12),
-                                in: RoundedRectangle(cornerRadius: 12))
-                    .foregroundStyle(adj.starBoost > 0 ? .black : .white)
+            // Enhance + Crop row.
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation { adj.starBoost = adj.starBoost > 0 ? 0 : 0.7 }
+                } label: {
+                    Label(adj.starBoost > 0 ? "Enhance on" : "Enhance",
+                          systemImage: "sparkles")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(adj.starBoost > 0 ? Color.white : Color.white.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(adj.starBoost > 0 ? .black : .white)
+                }
+                Button {
+                    withAnimation { showCrop.toggle() }
+                } label: {
+                    Label("Crop", systemImage: "crop.rotate")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(showCrop || !adj.geometry.isIdentity ? Color.cyan.opacity(0.85) : Color.white.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: 12))
+                        .foregroundStyle(showCrop || !adj.geometry.isIdentity ? .black : .white)
+                }
             }
+
+            if showCrop { cropPanel }
 
             // Tool picker.
             ScrollView(.horizontal, showsIndicators: false) {
@@ -227,6 +243,82 @@ struct PhotoEditorView: View {
         }
         .padding()
         .background(.black)
+    }
+
+    // MARK: - Crop / rotate / straighten
+
+    private var cropPanel: some View {
+        VStack(spacing: 10) {
+            // Rotate 90° + aspect presets.
+            HStack(spacing: 10) {
+                Button {
+                    withAnimation { adj.geometry.quarterTurns = (adj.geometry.quarterTurns + 1) % 4 }
+                } label: {
+                    Image(systemName: "rotate.right")
+                        .font(.system(size: 16))
+                        .frame(width: 40, height: 34)
+                        .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(.white)
+                }
+                .accessibilityLabel("Rotate 90 degrees")
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(aspectPresets, id: \.0) { name, ratio in
+                            Button { setAspect(ratio) } label: {
+                                Text(name)
+                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(.white.opacity(0.08), in: Capsule())
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Straighten slider.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Straighten").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+                    Spacer()
+                    Text(String(format: "%+.1f°", adj.geometry.straightenDegrees))
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.7))
+                }
+                Slider(value: $adj.geometry.straightenDegrees, in: -15...15).tint(.cyan)
+            }
+
+            Button("Reset crop") {
+                withAnimation { adj.geometry = Geometry() }
+            }
+            .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+            .disabled(adj.geometry.isIdentity)
+        }
+        .padding(10)
+        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private let aspectPresets: [(String, CGFloat?)] = [
+        ("Free", nil), ("1:1", 1), ("4:3", 4.0/3.0), ("3:2", 3.0/2.0), ("16:9", 16.0/9.0),
+    ]
+
+    /// Center-crop the frame to a target aspect ratio (nil = full frame).
+    private func setAspect(_ ratio: CGFloat?) {
+        guard let ratio, let img = originalPreview else {
+            adj.geometry.cropNormalized = CGRect(x: 0, y: 0, width: 1, height: 1); return
+        }
+        let w = img.size.width, h = img.size.height
+        let imgRatio = w / h
+        var cw: CGFloat = 1, ch: CGFloat = 1
+        if imgRatio > ratio {          // image wider than target → crop width
+            cw = ratio / imgRatio
+        } else {                        // taller → crop height
+            ch = imgRatio / ratio
+        }
+        withAnimation {
+            adj.geometry.cropNormalized = CGRect(
+                x: (1 - cw) / 2, y: (1 - ch) / 2, width: cw, height: ch)
+        }
     }
 
     @ViewBuilder

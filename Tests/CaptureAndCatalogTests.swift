@@ -52,6 +52,29 @@ final class CaptureAndCatalogTests: XCTestCase {
         XCTAssertFalse(a.isNeutral)
     }
 
+    /// A 90° rotation swaps width and height; a crop shrinks the extent.
+    func testGeometryRotateAndCrop() {
+        let src = CIImage(color: .gray).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 100))
+
+        var g = Geometry()
+        g.quarterTurns = 1
+        let rotated = ImageProcessor.applyGeometry(g, to: src)
+        XCTAssertEqual(rotated.extent.width, 100, accuracy: 1)
+        XCTAssertEqual(rotated.extent.height, 200, accuracy: 1)
+
+        var c = Geometry()
+        c.cropNormalized = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+        let cropped = ImageProcessor.applyGeometry(c, to: src)
+        XCTAssertEqual(cropped.extent.width, 100, accuracy: 1)
+        XCTAssertEqual(cropped.extent.height, 50, accuracy: 1)
+        // Re-origined to (0,0).
+        XCTAssertEqual(cropped.extent.origin.x, 0, accuracy: 1)
+        XCTAssertEqual(cropped.extent.origin.y, 0, accuracy: 1)
+
+        XCTAssertTrue(Geometry().isIdentity)
+        XCTAssertFalse(g.isIdentity)
+    }
+
     /// AutoDevelop on a synthetic dark frame recommends lifting exposure.
     func testAutoDevelopLiftsDarkFrame() {
         // A 4×4 nearly-black image.
