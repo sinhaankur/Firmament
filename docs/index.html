@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NightSky — point your phone at the real sky</title>
+<meta name="description" content="A native iOS app that identifies the real sky above you and captures it with a tripod-aware night camera. On-device, offline, private." />
+<meta property="og:title" content="NightSky" />
+<meta property="og:description" content="Point your iPhone at the real sky and understand it. Then capture it." />
+<meta property="og:type" content="website" />
+<style>
+  :root{
+    --bg:#05060a; --bg2:#0a0c14; --ink:#f4f6ff; --dim:#8a90a6;
+    --line:rgba(255,255,255,.10); --accent:#5a9dff; --accent2:#b98bff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:radial-gradient(1200px 800px at 70% -10%, #12132400 0, var(--bg) 60%),
+               var(--bg);
+    color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.5; overflow-x:hidden;
+  }
+  /* starfield */
+  .stars{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .stars i{position:absolute;background:#fff;border-radius:50%;opacity:.7;
+    animation:tw 4s ease-in-out infinite}
+  @keyframes tw{0%,100%{opacity:.15}50%{opacity:.9}}
+  .wrap{position:relative;z-index:1;max-width:940px;margin:0 auto;padding:0 24px}
+  header{padding:88px 0 40px;text-align:center}
+  .badge{display:inline-block;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:6px 14px;margin-bottom:26px}
+  h1{font-size:clamp(40px,8vw,74px);margin:0 0 14px;font-weight:700;letter-spacing:-.02em;
+    background:linear-gradient(180deg,#fff, #b9c2e6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{font-size:clamp(17px,3.2vw,22px);color:var(--dim);max-width:620px;margin:0 auto}
+  .tag em{color:var(--ink);font-style:italic}
+
+  .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin:38px 0 8px}
+  .btn{display:inline-flex;align-items:center;gap:9px;text-decoration:none;font-weight:600;
+    padding:14px 22px;border-radius:14px;border:1px solid var(--line);color:var(--ink);
+    background:linear-gradient(180deg,#171a2b,#0e1120);transition:transform .15s ease,border-color .15s}
+  .btn:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.28)}
+  .btn.primary{background:linear-gradient(180deg,#2b62c9,#1c40a0);border-color:#3a6fd6}
+  .btn small{display:block;font-weight:400;font-size:11px;color:rgba(255,255,255,.6)}
+  .btn.disabled{opacity:.55;pointer-events:none}
+  .note{font-size:12px;color:var(--dim);margin-top:10px}
+
+  section{padding:56px 0;border-top:1px solid var(--line)}
+  h2{font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin:0 0 26px;font-weight:600}
+  .grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .card{border:1px solid var(--line);border-radius:18px;padding:22px;
+    background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0))}
+  .card h3{margin:0 0 8px;font-size:18px}
+  .card p{margin:0;color:var(--dim);font-size:14.5px}
+  .k{font-size:13px;color:var(--accent2)}
+
+  .steps{counter-reset:s;display:grid;gap:14px}
+  .steps li{list-style:none;display:flex;gap:14px;align-items:flex-start;color:var(--dim);font-size:15px}
+  .steps li::before{counter-increment:s;content:counter(s);flex:0 0 28px;height:28px;
+    display:grid;place-items:center;border-radius:999px;background:#1a1f36;color:var(--ink);font-size:13px;font-weight:700}
+  code{background:#12152400;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px;color:#cdd6ff}
+
+  .platforms{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+  @media(max-width:560px){.platforms{grid-template-columns:1fr}}
+  .plat{border:1px solid var(--line);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:8px}
+  .pill{align-self:flex-start;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    border-radius:999px;padding:3px 10px}
+  .pill.soon{background:rgba(90,157,255,.15);color:#9cc0ff}
+  .pill.planned{background:rgba(185,139,255,.14);color:#cbb0ff}
+
+  footer{padding:48px 0 72px;text-align:center;color:var(--dim);font-size:13px}
+  footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="stars" id="stars"></div>
+<div class="wrap">
+
+  <header>
+    <span class="badge">On-device · Offline · Private</span>
+    <h1>NightSky</h1>
+    <p class="tag">Point your iPhone at the real sky and <em>understand</em> it.<br/>Then capture it.</p>
+
+    <div class="cta">
+      <a class="btn primary disabled" href="#" aria-disabled="true">
+        <span>◎</span>
+        <span>Install on iPhone<small>TestFlight — coming soon</small></span>
+      </a>
+      <a class="btn" href="https://github.com/sinhaankur/NightSky">
+        <span>⌥</span>
+        <span>Build it yourself<small>Open source on GitHub</small></span>
+      </a>
+    </div>
+    <p class="note">No public download link exists on iOS by design — Apple ships betas through TestFlight. Until then, clone &amp; run it on your own device in minutes.</p>
+  </header>
+
+  <section>
+    <h2>What it does</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Explore <span class="k">live</span></h3>
+        <p>Hold the phone up: stars, planets, the Sun &amp; Moon (with phase) and constellations label themselves, anchored to their true direction in <em>your</em> sky, right now. Tap for the facts.</p>
+      </div>
+      <div class="card">
+        <h3>Spot <span class="k">roadmap</span></h3>
+        <p>Arrows guide you to where the ISS and bright satellites are passing overhead, with a live countdown to the next visible pass.</p>
+      </div>
+      <div class="card">
+        <h3>Capture <span class="k">tripod</span></h3>
+        <p>Set it down and NightSky detects it's steady, then pushes the camera to its limit — long exposure, RAW frame-stacking, night-mode assist — behind one clean shutter.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Real sky, honestly computed</h2>
+    <div class="grid">
+      <div class="card"><h3>From your place &amp; time</h3><p>CoreLocation gives place + true heading; CoreMotion gives where the phone points and whether it's steady.</p></div>
+      <div class="card"><h3>Meeus &amp; JPL math</h3><p>Sun, Moon (with phase), and the naked-eye planets from standard ephemeris; a bundled bright-star catalog. Naked-eye pointing grade.</p></div>
+      <div class="card"><h3>Nothing invented</h3><p>Where a value is approximate, the app says so. Real over invented; reverence over spectacle — the same philosophy as the Universe Engine.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Install on your own iPhone (5 minutes, free Apple ID)</h2>
+    <ol class="steps">
+      <li><code>brew install xcodegen</code></li>
+      <li><code>git clone https://github.com/sinhaankur/NightSky.git &amp;&amp; cd NightSky</code></li>
+      <li><code>xcodegen generate &amp;&amp; open NightSky.xcodeproj</code></li>
+      <li>In Xcode → Signing &amp; Capabilities, choose your Team.</li>
+      <li>Plug in your iPhone, select it, press <code>⌘R</code>.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Platforms</h2>
+    <div class="platforms">
+      <div class="plat">
+        <span class="pill soon">iOS · soon</span>
+        <strong>iPhone 17 Pro &amp; iOS 17+</strong>
+        <span style="color:var(--dim);font-size:14px">LiDAR foreground occlusion + Pro cameras on the reference device; graceful fallback elsewhere. TestFlight link lands here.</span>
+      </div>
+      <div class="plat">
+        <span class="pill planned">Android · planned</span>
+        <strong>ARCore + CameraX</strong>
+        <span style="color:var(--dim);font-size:14px">A separate native app built against the same spec. Tracked in the repo's <code>android/</code> slot — honest roadmap, not a shipped claim.</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    NightSky · © Ankur Sinha · <a href="https://github.com/sinhaankur/NightSky">source</a> ·
+    a field companion to the <a href="https://www.sinhaankur.com/lab/celestial">Universe Engine</a>
+  </footer>
+</div>
+
+<script>
+  // scatter a quiet starfield
+  const box = document.getElementById('stars');
+  const N = Math.min(140, Math.floor(window.innerWidth * window.innerHeight / 9000));
+  for (let i = 0; i < N; i++) {
+    const s = document.createElement('i');
+    const sz = Math.random() < 0.85 ? 1 : 2;
+    s.style.width = s.style.height = sz + 'px';
+    s.style.left = Math.random() * 100 + 'vw';
+    s.style.top = Math.random() * 100 + 'vh';
+    s.style.animationDelay = (Math.random() * 4) + 's';
+    box.appendChild(s);
+  }
+</script>
+</body>
+</html>
