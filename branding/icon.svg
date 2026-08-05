@@ -1,0 +1,72 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- deep night sky, top-dark to horizon-glow -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#05060d"/>
+      <stop offset="0.55" stop-color="#0a1330"/>
+      <stop offset="0.82" stop-color="#16305e"/>
+      <stop offset="1"   stop-color="#2a5a86"/>
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"    stop-color="#cfe0ff" stop-opacity="0.28"/>
+      <stop offset="0.55" stop-color="#cfe0ff" stop-opacity="0.14"/>
+      <stop offset="1"    stop-color="#cfe0ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="starGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="moonBody" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c7d4f0"/>
+    </linearGradient>
+    <!-- rounded-rect mask so corners are clean under any renderer -->
+    <clipPath id="round"><rect width="1024" height="1024" rx="224" ry="224"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <rect width="1024" height="1024" fill="url(#sky)"/>
+
+    <!-- faint scattered stars -->
+    <g fill="#ffffff">
+      <circle cx="150" cy="180" r="3" opacity="0.8"/>
+      <circle cx="270" cy="120" r="2" opacity="0.6"/>
+      <circle cx="410" cy="200" r="2.5" opacity="0.7"/>
+      <circle cx="600" cy="150" r="2" opacity="0.5"/>
+      <circle cx="720" cy="240" r="3" opacity="0.75"/>
+      <circle cx="860" cy="170" r="2" opacity="0.6"/>
+      <circle cx="200" cy="360" r="2" opacity="0.55"/>
+      <circle cx="120" cy="520" r="2.5" opacity="0.6"/>
+      <circle cx="900" cy="430" r="2.5" opacity="0.65"/>
+      <circle cx="820" cy="600" r="2" opacity="0.5"/>
+      <circle cx="330" cy="470" r="2" opacity="0.5"/>
+      <circle cx="470" cy="380" r="2" opacity="0.45"/>
+      <circle cx="640" cy="470" r="2.5" opacity="0.6"/>
+    </g>
+
+    <!-- crescent Moon, upper-left, with soft glow -->
+    <g transform="translate(360 400)">
+      <circle cx="0" cy="0" r="300" fill="url(#moonGlow)"/>
+      <!-- crescent via even-odd: full disk minus an offset disk -->
+      <path fill-rule="evenodd" fill="url(#moonBody)"
+            d="M 0,-200 A 200,200 0 1 0 0,200 A 200,200 0 1 0 0,-200 Z
+               M 60,-176 A 176,176 0 1 1 60,176 A 176,176 0 1 1 60,-176 Z"/>
+      <!-- subtle craters on the lit limb -->
+      <circle cx="-120" cy="-40" r="18" fill="#b9c7e8" opacity="0.45"/>
+      <circle cx="-140" cy="55"  r="12" fill="#b9c7e8" opacity="0.4"/>
+      <circle cx="-95"  cy="120" r="9"  fill="#b9c7e8" opacity="0.35"/>
+    </g>
+
+    <!-- one bright pointed guide-star (the "you are here" spark) -->
+    <g transform="translate(700 660)">
+      <circle r="130" fill="url(#starGlow)" opacity="0.55"/>
+      <path d="M 0,-92 L 16,-16 L 92,0 L 16,16 L 0,92 L -16,16 L -92,0 L -16,-16 Z"
+            fill="#ffffff"/>
+      <path d="M 0,-46 L 8,-8 L 46,0 L 8,8 L 0,46 L -8,8 L -46,0 L -8,-8 Z"
+            fill="#eaf1ff"/>
+    </g>
+
+    <!-- horizon line -->
+    <rect x="0" y="900" width="1024" height="4" fill="#7fb0d8" opacity="0.35"/>
+  </g>
+</svg>

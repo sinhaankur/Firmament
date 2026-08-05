@@ -28,6 +28,12 @@ final class NightCapture: NSObject, ObservableObject {
 
     @Published var state: State = .idle
     @Published var lastImage: UIImage?
+    /// The freshly captured frame, handed to the editor for review + tweaks
+    /// before saving. Set when a capture finishes; cleared when the editor closes.
+    @Published var capturedForEditing: CIImage?
+    /// What the last capture was shot with — fed to the editor's AutoDevelop so
+    /// it can reason about the exposure the frame was taken at.
+    @Published var lastCaptureMeta = AutoDevelop.CaptureMeta()
     /// Objects that were in frame at capture time (set by the caller).
     var inFrameAnnotation: [String] = []
 
@@ -90,6 +96,14 @@ final class NightCapture: NSObject, ObservableObject {
         }
         state = .capturing(progress: 0)
         pushToLimits(device)
+
+        // Record what we're shooting with, for the editor's AutoDevelop.
+        lastCaptureMeta = AutoDevelop.CaptureMeta(
+            iso: Double(device.iso),
+            exposureSeconds: device.exposureDuration.seconds,
+            isStacked: stackFrames > 1,
+            frameCount: max(1, stackFrames)
+        )
 
         if stackFrames <= 1 {
             captureSingle()
@@ -239,21 +253,23 @@ final class NightCapture: NSObject, ObservableObject {
               let cg = ciContext.createCGImage(acc, from: acc.extent) else {
             state = .failed("Stacking failed"); return
         }
-        let image = UIImage(cgImage: cg)
-        lastImage = image
-        save(image)
+        lastImage = UIImage(cgImage: cg)
+        // Hand the stacked result to the editor for review before saving.
+        capturedForEditing = CIImage(cgImage: cg)
+        state = .idle
     }
 
-    // MARK: - Save
+    // MARK: - Hand-off to editor / save
 
-    /// Render a single CIImage (processed or RAW) to a UIImage and save it.
+    /// A single captured frame → hand to the editor (no auto-save; the user
+    /// reviews, optionally enhances, then saves).
     private func renderAndSave(_ ci: CIImage) {
         guard let cg = ciContext.createCGImage(ci, from: ci.extent) else {
             state = .failed("Could not render frame"); return
         }
-        let image = UIImage(cgImage: cg)
-        lastImage = image
-        save(image)
+        lastImage = UIImage(cgImage: cg)
+        capturedForEditing = CIImage(cgImage: cg)
+        state = .idle
     }
 
     private func save(_ image: UIImage) {

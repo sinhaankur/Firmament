@@ -24,6 +24,11 @@ struct CaptureControls: View {
                 Text(p.summary)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.55))
+                Text(p.apertureNote)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
             }
             if let advice, !advice.isEmpty {
                 Label(advice, systemImage: "sparkles")

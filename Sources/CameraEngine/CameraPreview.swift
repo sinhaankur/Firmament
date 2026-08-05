@@ -67,7 +67,8 @@ final class CameraEngine: ObservableObject {
             maxISO: prof.maxISO, minISO: prof.minISO,
             proRAWAvailable: proRAWAvailable,
             maxMegapixels: prof.maxMegapixels,
-            horizontalFovDegrees: prof.horizontalFovDegrees
+            horizontalFovDegrees: prof.horizontalFovDegrees,
+            apertureFStop: prof.apertureFStop
         )
         profile = prof
     }

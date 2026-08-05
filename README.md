@@ -1,13 +1,24 @@
 <div align="center">
 
-# NightSky
+<img src="docs/assets/firmament-icon-240.png" width="120" alt="Firmament icon" />
+
+# Firmament
 
 **Point your iPhone at the real sky and understand it. Then capture it.**
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-iOS%2017%2B-lightgrey.svg)](#requirements)
+[![Swift](https://img.shields.io/badge/Swift-6-orange.svg)](#requirements)
+[![Custom code](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#license--attribution)
+[![Open source](https://img.shields.io/badge/open%20source-yes-success.svg)](#contributing)
+
 A native iOS app that fuses the phone's camera, LiDAR, GPS, compass, and motion
 sensors with real astronomical data — a live AR sky identifier and a tripod-aware
-night-sky camera in one. The field companion to the web
+night-sky camera in one, with an AI photo editor that recovers the real sky from
+your dark frames. The **open-source** field companion to the web
 [Universe Engine](https://www.sinhaankur.com/lab/celestial).
+
+*100% custom Swift · no third-party dependencies · on-device · offline · private*
 
 </div>
 
@@ -20,14 +31,20 @@ night-sky camera in one. The field companion to the web
   in *your* sky, from *your* location, *right now*. Tap any label for the facts.
 - **Spot** *(roadmap)* — arrows guide you to where the ISS and bright satellites
   are passing overhead, with a live countdown to the next visible pass.
-- **Capture** — set the phone on a tripod and NightSky detects it's steady, then
+- **Capture** — set the phone on a tripod and Firmament detects it's steady, then
   pushes the camera to its limit: long exposure **+** RAW frame-stacking **+**
   system night-mode assist, behind one clean shutter. An on-device **Capture
   Advisor** reads the weather + Moon + darkness and tells you what to shoot and
   how. Each shot is annotated with what was in frame.
+- **Edit** — every capture opens in an in-app editor that **auto-develops** the
+  frame: it measures the exposure your shot was taken at and recovers the real
+  night sky from what looks like a black frame (the problem that inspired it),
+  then explains — on-device, via **Apple Intelligence** where available — what
+  the shot is and how it was captured. Manual exposure/contrast/warmth/shadows +
+  a one-tap "reveal faint stars" boost, then save.
 - **Telescope** — connect a **Celestron** computerized mount (NexStar SE/SLT/
   Evolution, CPC, Advanced VX, CGX, Astro Fi…) over its SkyPortal WiFi module.
-  Tap any object NightSky has identified and **point the telescope at it**;
+  Tap any object Firmament has identified and **point the telescope at it**;
   captures are stamped with the mount's exact coordinates. Built from a
   from-scratch Swift implementation of Celestron's NexStar protocol.
 
@@ -38,7 +55,7 @@ leave the phone.
 
 ## Engines
 
-NightSky is built around two named engines, plus supporting modules — the same
+Firmament is built around two named engines, plus supporting modules — the same
 "engine" discipline as the web Universe Engine:
 
 - **NightSkyEngine** — the astronomy core. Pure, offline, deterministic: Julian
@@ -51,6 +68,10 @@ NightSky is built around two named engines, plus supporting modules — the same
   **NexStarClient** (GOTO, position read-back, alignment/slew status).
 - **CaptureAdvisor** — a model-free rule engine that recommends settings from
   real conditions; an optional on-device LLM only *phrases* its output.
+- **AutoDevelop + editor** — measures the captured frame (mean luminance) and its
+  capture settings and computes the recovery to reveal the real sky; **Apple
+  Intelligence** (Foundation Models, on-device) narrates what the shot is. The
+  math decides the numbers; the model only explains.
 
 ## How the sky is computed
 
@@ -76,7 +97,7 @@ invented, reverence over spectacle.**
   cameras). Runs on any iPhone on iOS 17+; without LiDAR, foreground occlusion
   degrades gracefully to a horizon line.
 - **Celestron mount (optional):** any computerized Celestron with a SkyPortal
-  WiFi module (or built-in WiFi on Evolution / Astro Fi). NightSky works fully
+  WiFi module (or built-in WiFi on Evolution / Astro Fi). Firmament works fully
   without one.
 - Xcode 26+, Swift 5+ (builds clean under the Swift 6 toolchain).
 
@@ -87,8 +108,8 @@ The Xcode project is generated from [`project.yml`](./project.yml) via
 
 ```bash
 brew install xcodegen        # one-time
-git clone https://github.com/sinhaankur/NightSky.git
-cd NightSky
+git clone https://github.com/sinhaankur/Firmament.git
+cd Firmament
 xcodegen generate            # creates NightSky.xcodeproj
 open NightSky.xcodeproj
 ```
@@ -108,7 +129,7 @@ Apple does not allow public `.ipa` downloads, so beta distribution is via
 **TestFlight** and general availability via the **App Store**. The install page
 holds the links:
 
-➡️ **[Install page](https://sinhaankur.github.io/NightSky/)** — TestFlight (iOS,
+➡️ **[Install page](https://sinhaankur.github.io/Firmament/)** — TestFlight (iOS,
 coming) · Android (planned).
 
 ## Android & cross-platform
@@ -160,4 +181,4 @@ code):
 - Bright-star positions from the Yale Bright Star Catalogue / Hipparcos.
 - Telescope control follows Celestron's public *NexStar Communication Protocol*
   (implemented from scratch; Celestron/NexStar/SkyPortal are their trademarks —
-  NightSky is an independent, unaffiliated app).
+  Firmament is an independent, unaffiliated app).

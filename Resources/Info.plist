@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>NightSky</string>
+	<string>Firmament</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -21,15 +21,15 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSCameraUsageDescription</key>
-	<string>NightSky uses the camera to show the live sky and to capture long-exposure night photos.</string>
+	<string>Firmament uses the camera to show the live sky and to capture long-exposure night photos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>NightSky uses your location to compute exactly where each star, planet, and satellite is in your sky.</string>
+	<string>Firmament uses your location to compute exactly where each star, planet, and satellite is in your sky.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>NightSky uses motion sensors to know where your phone is pointing and to detect when it's steady on a tripod.</string>
+	<string>Firmament uses motion sensors to know where your phone is pointing and to detect when it's steady on a tripod.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>NightSky saves your captured night-sky photos to your photo library.</string>
+	<string>Firmament saves your captured night-sky photos to your photo library.</string>
 	<key>NSWorldSensingUsageDescription</key>
-	<string>NightSky uses the LiDAR scanner to detect the horizon and nearby objects so the sky overlay is correctly occluded.</string>
+	<string>Firmament uses the LiDAR scanner to detect the horizon and nearby objects so the sky overlay is correctly occluded.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

@@ -1,0 +1,28 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- calm night gradient, single vertical wash -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"  stop-color="#0b1024"/>
+      <stop offset="1"  stop-color="#1b2c55"/>
+    </linearGradient>
+    <linearGradient id="moon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbe4fb"/>
+    </linearGradient>
+    <clipPath id="round"><rect width="1024" height="1024" rx="230" ry="230"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <rect width="1024" height="1024" fill="url(#sky)"/>
+
+    <!-- one simple crescent -->
+    <path fill-rule="evenodd" fill="url(#moon)"
+          transform="translate(470 512)"
+          d="M 0,-240 A 240,240 0 1 0 0,240 A 240,240 0 1 0 0,-240 Z
+             M 96,-210 A 210,210 0 1 1 96,210 A 210,210 0 1 1 96,-210 Z"/>
+
+    <!-- one four-point star -->
+    <path transform="translate(715 360)" fill="#ffffff"
+          d="M 0,-70 L 15,-15 L 70,0 L 15,15 L 0,70 L -15,15 L -70,0 L -15,-15 Z"/>
+  </g>
+</svg>

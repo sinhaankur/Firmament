@@ -1,4 +1,12 @@
 import SwiftUI
+import CoreImage
+
+/// Identifiable wrapper so a freshly captured CIImage can drive a
+/// `fullScreenCover(item:)` into the editor.
+private struct EditableImage: Identifiable {
+    let id = UUID()
+    let image: CIImage
+}
 
 /// The whole app: a full-screen camera sky with a minimal mode switcher.
 /// Explore (identify) · Spot (satellites) · Capture (night photo).
@@ -76,6 +84,14 @@ struct RootView: View {
             TelescopeSheet(telescope: telescope)
                 .presentationDetents([.medium, .large])
         }
+        .fullScreenCover(item: Binding(
+            get: { night.capturedForEditing.map { EditableImage(image: $0) } },
+            set: { if $0 == nil { night.capturedForEditing = nil } }
+        )) { editable in
+            PhotoEditorView(original: editable.image, meta: night.lastCaptureMeta) {
+                night.capturedForEditing = nil
+            }
+        }
         .onDisappear { model.stop(); camera.stop(); telescope.disconnect() }
     }
 
@@ -117,7 +133,7 @@ struct RootView: View {
     private var topBar: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("NightSky").font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Firmament").font(.system(size: 15, weight: .semibold, design: .rounded))
                 if model.usingSimulatedLocation {
                     Label("Locating…", systemImage: "location.slash")
                         .font(.system(size: 10)).foregroundStyle(.orange)

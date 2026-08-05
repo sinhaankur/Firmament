@@ -25,6 +25,12 @@ struct DeviceCaptureProfile {
     let maxMegapixels: Double
     /// Horizontal field of view of the active format (degrees).
     let horizontalFovDegrees: Double
+    /// The lens f-number. iPhone apertures are FIXED (no mechanical iris), so
+    /// this is read-only and already "wide open" — the phone equivalent of a
+    /// DSLR shot at its lowest f-stop. We surface it so the user can see the
+    /// lens is already gathering the most light it physically can; the exposure
+    /// win therefore comes from shutter + ISO + frame-stacking, not aperture.
+    let apertureFStop: Double
 
     /// Whether a hard single-exposure cap means we should rely on stacking.
     /// (On Android/Samsung this cap can be ~0.1 s; stacking is the only answer.)
@@ -64,7 +70,8 @@ struct DeviceCaptureProfile {
             minISO: fmt.minISO,
             proRAWAvailable: photoOutput?.isAppleProRAWSupported ?? false,
             maxMegapixels: mp,
-            horizontalFovDegrees: Double(fmt.videoFieldOfView)
+            horizontalFovDegrees: Double(fmt.videoFieldOfView),
+            apertureFStop: Double(device.lensAperture)
         )
     }
 
@@ -74,6 +81,14 @@ struct DeviceCaptureProfile {
             ? String(format: "%.0fs", maxExposureSeconds)
             : String(format: "%.0fms", maxExposureSeconds * 1000)
         let raw = proRAWAvailable ? " · ProRAW" : ""
-        return "\(exp) · ISO \(Int(minISO))–\(Int(maxISO)) · \(Int(maxMegapixels.rounded()))MP\(raw)"
+        let ap = apertureFStop > 0 ? String(format: "ƒ/%.1f · ", apertureFStop) : ""
+        return "\(ap)\(exp) · ISO \(Int(minISO))–\(Int(maxISO)) · \(Int(maxMegapixels.rounded()))MP\(raw)"
+    }
+
+    /// A one-line honest note about the fixed aperture, for the capture UI.
+    var apertureNote: String {
+        apertureFStop > 0
+            ? String(format: "Lens is fixed wide open at ƒ/%.1f (no iris on phone) — light comes from exposure, ISO & stacking.", apertureFStop)
+            : "Aperture is fixed on phone cameras — light comes from exposure, ISO & stacking."
     }
 }

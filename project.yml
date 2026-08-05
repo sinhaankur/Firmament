@@ -26,18 +26,18 @@ targets:
     info:
       path: Resources/Info.plist
       properties:
-        CFBundleDisplayName: NightSky
+        CFBundleDisplayName: Firmament
         CFBundleShortVersionString: "0.1.0"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         # --- Privacy usage strings (required or the app crashes on first access) ---
-        NSCameraUsageDescription: "NightSky uses the camera to show the live sky and to capture long-exposure night photos."
-        NSLocationWhenInUseUsageDescription: "NightSky uses your location to compute exactly where each star, planet, and satellite is in your sky."
-        NSMotionUsageDescription: "NightSky uses motion sensors to know where your phone is pointing and to detect when it's steady on a tripod."
-        NSPhotoLibraryAddUsageDescription: "NightSky saves your captured night-sky photos to your photo library."
+        NSCameraUsageDescription: "Firmament uses the camera to show the live sky and to capture long-exposure night photos."
+        NSLocationWhenInUseUsageDescription: "Firmament uses your location to compute exactly where each star, planet, and satellite is in your sky."
+        NSMotionUsageDescription: "Firmament uses motion sensors to know where your phone is pointing and to detect when it's steady on a tripod."
+        NSPhotoLibraryAddUsageDescription: "Firmament saves your captured night-sky photos to your photo library."
         # LiDAR / world tracking hint
-        NSWorldSensingUsageDescription: "NightSky uses the LiDAR scanner to detect the horizon and nearby objects so the sky overlay is correctly occluded."
+        NSWorldSensingUsageDescription: "Firmament uses the LiDAR scanner to detect the horizon and nearby objects so the sky overlay is correctly occluded."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sinhaankur.nightsky
