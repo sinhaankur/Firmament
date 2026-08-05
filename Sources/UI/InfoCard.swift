@@ -5,6 +5,9 @@ import SwiftUI
 struct InfoCard: View {
     let object: SkyObject
     let onClose: () -> Void
+    /// When a telescope is connected, GOTO this object.
+    var onGoto: (() -> Void)?
+    var telescopeConnected: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +48,17 @@ struct InfoCard: View {
                     Text(blurb)
                         .font(.system(size: 13))
                         .foregroundStyle(.white.opacity(0.7))
+                }
+
+                if telescopeConnected, let onGoto {
+                    Button(action: onGoto) {
+                        Label("Point telescope here", systemImage: "scope")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+                            .foregroundStyle(.black)
+                    }
                 }
             }
             .padding(20)

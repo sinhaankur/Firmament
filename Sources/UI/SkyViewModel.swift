@@ -21,7 +21,7 @@ final class SkyViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     /// Fallback observer if the user hasn't granted location yet (Greenwich).
-    private let fallback = SkyEngine.Observer(latitude: 51.4779, longitude: 0.0)
+    private let fallback = NightSkyEngine.Observer(latitude: 51.4779, longitude: 0.0)
 
     func start() {
         location.start()
@@ -47,7 +47,7 @@ final class SkyViewModel: ObservableObject {
     }
 
     private func recompute() {
-        let observer: SkyEngine.Observer
+        let observer: NightSkyEngine.Observer
         if let c = location.coordinate {
             observer = .init(latitude: c.latitude, longitude: c.longitude)
             usingSimulatedLocation = false
@@ -55,7 +55,7 @@ final class SkyViewModel: ObservableObject {
             observer = fallback
             usingSimulatedLocation = true
         }
-        let engine = SkyEngine(observer: observer)
+        let engine = NightSkyEngine(observer: observer)
         objects = engine.allObjects(at: date, aboveHorizonOnly: false)
     }
 

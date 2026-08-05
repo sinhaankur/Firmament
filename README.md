@@ -22,11 +22,35 @@ night-sky camera in one. The field companion to the web
   are passing overhead, with a live countdown to the next visible pass.
 - **Capture** — set the phone on a tripod and NightSky detects it's steady, then
   pushes the camera to its limit: long exposure **+** RAW frame-stacking **+**
-  system night-mode assist, behind one clean shutter. Each shot is annotated with
-  what was in frame.
+  system night-mode assist, behind one clean shutter. An on-device **Capture
+  Advisor** reads the weather + Moon + darkness and tells you what to shoot and
+  how. Each shot is annotated with what was in frame.
+- **Telescope** — connect a **Celestron** computerized mount (NexStar SE/SLT/
+  Evolution, CPC, Advanced VX, CGX, Astro Fi…) over its SkyPortal WiFi module.
+  Tap any object NightSky has identified and **point the telescope at it**;
+  captures are stamped with the mount's exact coordinates. Built from a
+  from-scratch Swift implementation of Celestron's NexStar protocol.
 
-Everything runs **on-device and offline**. No account. Your location and photos
-never leave the phone.
+Everything runs **on-device and offline** (the optional weather lookup is the
+only network call, and sends nothing but a coarse lat/lon). No account. No
+third-party frameworks — **100% custom code**. Your location and photos never
+leave the phone.
+
+## Engines
+
+NightSky is built around two named engines, plus supporting modules — the same
+"engine" discipline as the web Universe Engine:
+
+- **NightSkyEngine** — the astronomy core. Pure, offline, deterministic: Julian
+  date → sidereal time → RA/Dec → alt/az, Sun/Moon/planet ephemeris, and the
+  bright-star catalog. No UI, no network.
+- **CameraEngine** — owns the live camera, picks the strongest lens, and detects
+  the device's **real** capture limits at runtime (`DeviceCaptureProfile`), then
+  drives the `NightCapture` pipeline (long exposure + RAW frame-stacking).
+- **TelescopeEngine** — bridges the catalog to a Celestron mount via a custom
+  **NexStarClient** (GOTO, position read-back, alignment/slew status).
+- **CaptureAdvisor** — a model-free rule engine that recommends settings from
+  real conditions; an optional on-device LLM only *phrases* its output.
 
 ## How the sky is computed
 
@@ -51,6 +75,9 @@ invented, reverence over spectacle.**
 - **iPhone 17 Pro** is the reference device (LiDAR foreground occlusion + Pro
   cameras). Runs on any iPhone on iOS 17+; without LiDAR, foreground occlusion
   degrades gracefully to a horizon line.
+- **Celestron mount (optional):** any computerized Celestron with a SkyPortal
+  WiFi module (or built-in WiFi on Evolution / Astro Fi). NightSky works fully
+  without one.
 - Xcode 26+, Swift 5+ (builds clean under the Swift 6 toolchain).
 
 ## Build & run on your own device
@@ -99,12 +126,14 @@ project.yml          XcodeGen project definition (source of truth)
 Sources/
   App/               App entry + root view
   Sensors/           CoreLocation + CoreMotion services
-  SkyEngine/         Pure astronomy: math, ephemeris, catalogs (no UI, offline)
-  AR/                Camera preview + sky→screen projection
-  Capture/           Night Capture pipeline (long exposure + stacking)
-  UI/                SwiftUI screens (Explore / Spot / Capture, InfoCard)
+  NightSkyEngine/    Pure astronomy: math, ephemeris, catalogs (no UI, offline)
+  CameraEngine/      Camera session, device profile, Night Capture pipeline
+  AR/                Sky→screen projection
+  Advisor/           CaptureAdvisor + weather + on-device LLM phrasing hook
+  Telescope/         NexStarClient + TelescopeEngine (Celestron control)
+  UI/                SwiftUI screens (Explore / Spot / Capture, InfoCard, sheets)
 Resources/           Info.plist, asset catalog
-docs/                Install landing page (GitHub Pages)
+docs/                Install landing page + CAMERA-PROFILES.md research
 android/             Planned native port (shares DESIGN.md)
 ```
 
@@ -115,11 +144,20 @@ real Sun/Moon/planet/star labels from your location and time, tap-to-inspect, an
 a tripod-gated Night Capture path. Explore/Spot/Capture roadmap is in
 [`DESIGN.md`](./DESIGN.md).
 
-## License
+## License & attribution
 
-MIT © Ankur Sinha. See [`LICENSE`](./LICENSE).
+MIT © **Ankur Sinha** (sinhaankur@ymail.com). See [`LICENSE`](./LICENSE).
 
-Astronomical algorithms after Jean Meeus, *Astronomical Algorithms*; planetary
-elements from JPL's approximate-positions tables; bright-star positions from the
-Yale Bright Star Catalogue / Hipparcos. NightSky's own code is © Ankur Sinha;
-third-party data sources are credited here and in-code.
+**All code is custom** — hand-written Swift on Apple frameworks, with **no
+third-party libraries or SDKs**. That includes the astronomy, the camera
+pipeline, the capture advisor, and the Celestron **NexStar** protocol client.
+
+Only *reference data and public specifications* are credited (never anyone else's
+code):
+
+- Astronomical algorithms after Jean Meeus, *Astronomical Algorithms*.
+- Planetary elements from JPL's approximate-positions tables.
+- Bright-star positions from the Yale Bright Star Catalogue / Hipparcos.
+- Telescope control follows Celestron's public *NexStar Communication Protocol*
+  (implemented from scratch; Celestron/NexStar/SkyPortal are their trademarks —
+  NightSky is an independent, unaffiliated app).

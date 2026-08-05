@@ -6,11 +6,15 @@ struct RootView: View {
     enum Mode: String, CaseIterable { case explore = "Explore", spot = "Spot", capture = "Capture" }
 
     @StateObject private var model = SkyViewModel()
-    @StateObject private var camera = CameraController()
+    @StateObject private var camera = CameraEngine()
     @StateObject private var night = NightCapture()
+    @StateObject private var advisor = CaptureAdvisor()
+    @StateObject private var telescope = TelescopeEngine()
 
     @State private var mode: Mode = .explore
     @State private var selected: SkyObject?
+    @State private var showTelescope = false
+    private let weather = WeatherProvider()
 
     var body: some View {
         ZStack {
@@ -36,7 +40,9 @@ struct RootView: View {
                 topBar
                 Spacer()
                 if mode == .capture {
-                    CaptureControls(night: night, motion: model.motion)
+                    CaptureControls(night: night, motion: model.motion,
+                                    profile: camera.profile,
+                                    advice: advisor.advice)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 modeSwitcher
@@ -45,8 +51,13 @@ struct RootView: View {
 
             // Info card for a tapped object.
             if let obj = selected {
-                InfoCard(object: obj) { selected = nil }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                InfoCard(
+                    object: obj,
+                    onClose: { selected = nil },
+                    onGoto: { telescope.goto(obj) },
+                    telescopeConnected: telescope.isConnected
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.25), value: mode)
@@ -58,7 +69,47 @@ struct RootView: View {
         .onChange(of: camera.isConfigured) { _, ready in
             if ready { night.attach(to: camera) }
         }
-        .onDisappear { model.stop(); camera.stop() }
+        .onChange(of: mode) { _, newMode in
+            if newMode == .capture { Task { await refreshAdvice() } }
+        }
+        .sheet(isPresented: $showTelescope) {
+            TelescopeSheet(telescope: telescope)
+                .presentationDetents([.medium, .large])
+        }
+        .onDisappear { model.stop(); camera.stop(); telescope.disconnect() }
+    }
+
+    // MARK: - Capture advice
+
+    /// Assemble real conditions (astronomy from NightSkyEngine + optional
+    /// weather) and ask the advisor what to shoot. Runs only in Capture mode.
+    private func refreshAdvice() async {
+        let now = model.date
+        let sun = model.objects.first { $0.id == "sun" }
+        let moon = model.objects.first { $0.id == "moon" }
+        let moonIllum = moonIllumination(at: now)
+
+        var reading: WeatherProvider.Reading?
+        if let coord = model.location.coordinate {
+            reading = await weather.fetch(for: coord)
+        }
+
+        let conditions = SkyConditions(
+            cloudCover: reading?.cloudCover,
+            humidity: reading?.humidity,
+            moonIllumination: moonIllum,
+            moonAltitude: moon?.altitude ?? -90,
+            sunAltitude: sun?.altitude ?? -90,
+            bortle: nil,
+            windSpeed: reading?.windSpeed,
+            temperatureC: reading?.temperatureC
+        )
+        advisor.update(conditions: conditions, profile: camera.profile)
+    }
+
+    private func moonIllumination(at date: Date) -> Double {
+        let jd = SkyMath.julianDay(from: date)
+        return SolarSystem.moonPhase(jd: jd).illumination
     }
 
     // MARK: - Chrome
@@ -77,6 +128,15 @@ struct RootView: View {
                 }
             }
             Spacer()
+            Button {
+                showTelescope = true
+            } label: {
+                Image(systemName: telescope.isConnected ? "scope" : "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 14))
+                    .foregroundStyle(telescope.isConnected ? .green : .white.opacity(0.7))
+                    .padding(8)
+                    .background(.black.opacity(0.35), in: Circle())
+            }
             Text(model.date, style: .time)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.7))

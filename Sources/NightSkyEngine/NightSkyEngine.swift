@@ -1,12 +1,18 @@
 import Foundation
 
-/// The top-level sky computer. Given an observer (lat/lon) and a time, it
-/// resolves every catalog object into `SkyObject`s with current alt/az.
+/// **NightSkyEngine** — the top-level sky computer and one of the app's two
+/// named engines (the other is `CameraEngine`). Given an observer (lat/lon) and
+/// a time, it resolves every catalog object into `SkyObject`s with current
+/// alt/az.
 ///
 /// Everything is pure and synchronous — no I/O, no network. Callers feed it a
 /// location from `LocationService` and a date (usually `Date()`), and get back
-/// what's in the sky right now. This is the on-device, offline core.
-struct SkyEngine {
+/// what's in the sky right now. This is the on-device, offline astronomy core.
+///
+/// All original code © Ankur Sinha. Astronomical algorithms after Meeus and
+/// JPL's approximate-positions tables (credited in the README); the
+/// implementation here is hand-written, no third-party dependencies.
+struct NightSkyEngine {
 
     struct Observer {
         let latitude: Double

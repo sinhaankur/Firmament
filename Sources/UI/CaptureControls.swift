@@ -6,11 +6,33 @@ import SwiftUI
 struct CaptureControls: View {
     @ObservedObject var night: NightCapture
     @ObservedObject var motion: MotionService
+    /// The active camera's honest capabilities (drives stack depth + summary).
+    var profile: DeviceCaptureProfile?
+    /// Optional one-line advice from the capture advisor.
+    var advice: String?
 
-    private var stackCount: Int { motion.isSteady ? 16 : 1 }
+    // Tripod-steady → a deep stack sized to this device's exposure ceiling;
+    // hand-held → one shot. Depth comes from the detected profile.
+    private var stackCount: Int {
+        guard motion.isSteady else { return 1 }
+        return profile?.suggestedStackFrames ?? 24
+    }
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
+            if let p = profile {
+                Text(p.summary)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+            if let advice, !advice.isEmpty {
+                Label(advice, systemImage: "sparkles")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.black.opacity(0.4), in: Capsule())
+            }
             stabilityChip
             statusLine
             shutter

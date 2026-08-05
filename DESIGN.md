@@ -73,7 +73,27 @@ invented.*
 - Golden/blue-hour and astronomical-twilight timings for tonight.
 - Framing guides + "point here" for a target object.
 
-### 2.5 Night Capture mode (tripod)
+### 2.5 Celestron telescope control
+- Connect a Celestron computerized mount over its **SkyPortal WiFi module**
+  (`Celestron-XXXX` / `SkyPortal_XXXX` network, TCP). NightSky speaks the
+  documented **NexStar protocol** directly (custom Swift `NexStarClient` — no
+  third-party library).
+- Tap any identified object → **GOTO**; the mount slews to its RA/Dec. Position,
+  alignment, and slew status are read back and shown live.
+- Captures are stamped with the mount's exact coordinates.
+- Fully optional; the app is complete without a telescope.
+
+### 2.6 Capture Advisor (weather-aware, on-device)
+- A **model-free rule engine** (`CaptureAdvisor`) recommends what to shoot and
+  how — target (deep sky / stars / Moon & planets), ISO, exposure, stack depth —
+  from **real conditions**: weather (cloud cover, humidity, wind, temperature via
+  keyless Open-Meteo), Moon phase + altitude, darkness (Sun altitude), and the
+  device's honest capture limits.
+- **Optional** on-device LLM (Apple Foundation Models, when enabled) only
+  *phrases* the recommendation; it never decides the numbers. Works fully with no
+  model. Nothing acts autonomously — the user still taps the shutter.
+
+### 2.7 Night Capture mode (tripod)
 - **Stability detection** via CoreMotion — when the phone is still (on a tripod
   or braced), Night Capture unlocks its long-exposure ladder.
 - **Max-limit capture**, all of it:
@@ -92,29 +112,36 @@ invented.*
 
 ## 3. Architecture
 
-Native **SwiftUI** app, Swift 6, targeting iOS 26 (Xcode 26). Modules:
+Native **SwiftUI** app, Swift 6, targeting iOS 26 (Xcode 26). **100% custom
+code — no third-party libraries.** Two named engines plus supporting modules:
 
 ```
-NightSkyApp            App entry, root navigation, mode switch (Explore | Spot | Capture)
+App/NightSkyApp        Entry + RootView; mode switch (Explore | Spot | Capture)
 Sensors/
-  LocationService     CoreLocation — coordinate + true heading
-  MotionService       CoreMotion — device attitude (roll/pitch/yaw), stability
-SkyEngine/
-  SkyMath             Julian date, sidereal time, RA/Dec → alt/az, refraction
-  SolarSystem         Sun/Moon/planets low-precision ephemeris (VSOP-lite / Meeus)
-  StarCatalog         Bundled bright-star table (name, RA/Dec, mag)
-  Constellations      Star-index line lists
-  Satellites          TLE store + SGP4 → look angle (ISS first)
+  LocationService      CoreLocation — coordinate + true heading
+  MotionService        CoreMotion — device attitude + tripod stability
+NightSkyEngine/        ← ENGINE 1: astronomy core (pure, offline, deterministic)
+  SkyMath              Julian date, sidereal time, RA/Dec → alt/az, refraction
+  SolarSystem          Sun/Moon/planet ephemeris (Meeus + JPL Keplerian)
+  StarCatalog          Bundled bright-star table + constellations
+  SkyObject            Resolved-object model
+  NightSkyEngine       Orchestrator: observer + time → objects with alt/az
+CameraEngine/          ← ENGINE 2: capture + device orchestration
+  CameraEngine         Session, best-lens selection, published capability profile
+  DeviceCaptureProfile Runtime-detected real limits (exposure/ISO/ProRAW/MP)
+  NightCapture         Long exposure + RAW frame-stacking + night-mode assist
 AR/
-  SkyOverlayView      Camera feed + projected celestial labels (attitude-driven)
-  LiDARForeground     ARKit scene depth / mesh → foreground occlusion mask
-Capture/
-  StabilityDetector   Tripod/steady detection from MotionService
-  NightCapture        AVFoundation: long exposure + RAW stacking + night-mode assist
-  FrameStacker        Align + accumulate frames (Accelerate/Metal)
-  CaptureAnnotator    Tag saved photo with in-frame objects + geo/time
+  SkyProjection        alt/az + pointing → screen position (roll-corrected)
+Advisor/
+  SkyConditions        Real observing-conditions snapshot
+  CaptureAdvisor       Model-free recommendation engine
+  WeatherProvider      Keyless Open-Meteo current conditions
+  OnDeviceLLM          Optional Apple Foundation Models phrasing (fallback = rules)
+Telescope/
+  NexStarClient        From-scratch Celestron NexStar protocol over TCP/WiFi
+  TelescopeEngine      Bridges catalog → mount (GOTO, status, coordinate stamp)
 UI/
-  ExploreScreen, SpotScreen, CaptureScreen, InfoCard, CalibrationNudge
+  RootView, SkyOverlayView, InfoCard, CaptureControls, TelescopeSheet
 ```
 
 ### Data flow (Explore mode)

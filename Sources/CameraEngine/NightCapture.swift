@@ -33,17 +33,51 @@ final class NightCapture: NSObject, ObservableObject {
 
     private let photoOutput = AVCapturePhotoOutput()
     private let ciContext = CIContext()
-    private weak var controller: CameraController?
+    private weak var controller: CameraEngine?
 
-    /// Attach to an already-configured camera session.
-    func attach(to controller: CameraController) {
+    /// True when the sensor supports Apple ProRAW on this device — the best
+    /// possible night-sky negative (full bit depth, minimal processing).
+    private(set) var proRAWAvailable = false
+
+    /// Attach to an already-configured camera session and unlock the pro
+    /// ceiling: highest quality prioritization, maximum photo dimensions, and
+    /// Apple ProRAW where the hardware supports it.
+    func attach(to controller: CameraEngine) {
         self.controller = controller
         let session = controller.session
         session.beginConfiguration()
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
         }
+
+        // Squeeze the most out of the Pro sensor.
+        photoOutput.maxPhotoQualityPrioritization = .quality
+        if #available(iOS 16.0, *) {
+            // Full-resolution frames (e.g. 48 MP on iPhone Pro sensors).
+            photoOutput.maxPhotoDimensions = maxSupportedDimensions()
+        }
+        // Apple ProRAW — the cleanest astro negative when available.
+        if photoOutput.isAppleProRAWSupported {
+            photoOutput.isAppleProRAWEnabled = true
+            proRAWAvailable = true
+        }
+
         session.commitConfiguration()
+
+        // Reflect ProRAW support in the engine's published capability profile.
+        controller.refreshProfile(proRAWAvailable: proRAWAvailable)
+    }
+
+    /// Largest still dimensions the active format supports.
+    @available(iOS 16.0, *)
+    private func maxSupportedDimensions() -> CMVideoDimensions {
+        guard let fmt = controller?.videoDevice?.activeFormat,
+              let maxDim = fmt.supportedMaxPhotoDimensions.max(by: {
+                  Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height)
+              }) else {
+            return CMVideoDimensions(width: 0, height: 0)
+        }
+        return maxDim
     }
 
     // MARK: - Capture entry
@@ -66,47 +100,95 @@ final class NightCapture: NSObject, ObservableObject {
 
     // MARK: - Drive the device to its ceiling
 
-    /// Set max ISO + longest exposure the hardware supports, and lock focus at
-    /// infinity — the correct configuration for stars.
+    /// Configure the device for stars: focus locked at infinity, the longest
+    /// exposure and highest ISO the hardware allows, and a fixed daylight-ish
+    /// white balance so auto-WB doesn't tint the night sky. All clamped to the
+    /// active format's real limits.
     private func pushToLimits(_ device: AVCaptureDevice) {
         do {
             try device.lockForConfiguration()
+
+            // Focus: lock at infinity — stars are at the far end of the lens.
             if device.isFocusModeSupported(.locked) {
-                device.setFocusModeLocked(lensPosition: 1.0)  // ~infinity
+                device.setFocusModeLocked(lensPosition: 1.0, completionHandler: nil)
             }
-            let maxDur = device.activeFormat.maxExposureDuration
-            let maxISO = device.activeFormat.maxISO
+
+            // Exposure: longest supported duration + top ISO for max light.
+            let fmt = device.activeFormat
+            let maxDur = fmt.maxExposureDuration
+            let maxISO = fmt.maxISO
             if device.isExposureModeSupported(.custom) {
                 device.setExposureModeCustom(
                     duration: maxDur, iso: maxISO, completionHandler: nil
                 )
             }
+
+            // White balance: lock to a neutral daylight point (~5200K) so the
+            // sky stays true instead of being auto-warmed toward city light.
+            if device.isWhiteBalanceModeSupported(.locked) {
+                let gains = daylightGains(for: device)
+                device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
+            }
+
+            // Kill any digital zoom — full sensor, full field of view.
+            device.videoZoomFactor = 1.0
+
             device.unlockForConfiguration()
         } catch {
             // Non-fatal: fall back to whatever auto gives us.
         }
     }
 
+    /// Neutral daylight white-balance gains, clamped to the device maximum.
+    private func daylightGains(for device: AVCaptureDevice) -> AVCaptureDevice.WhiteBalanceGains {
+        let temp = AVCaptureDevice.WhiteBalanceTemperatureAndTintValues(
+            temperature: 5200, tint: 0)
+        var g = device.deviceWhiteBalanceGains(for: temp)
+        let maxG = device.maxWhiteBalanceGain
+        g.redGain = min(max(1.0, g.redGain), maxG)
+        g.greenGain = min(max(1.0, g.greenGain), maxG)
+        g.blueGain = min(max(1.0, g.blueGain), maxG)
+        return g
+    }
+
     // MARK: - Single best-effort frame (hand-held or night-mode assist)
 
     private func captureSingle() {
-        let settings = makePhotoSettings()
-        photoOutput.capturePhoto(with: settings, delegate: self)
+        // A single hero frame: use the best possible negative (ProRAW).
+        photoOutput.capturePhoto(with: makePhotoSettings(preferRAW: true), delegate: self)
     }
 
-    private func makePhotoSettings() -> AVCapturePhotoSettings {
+    /// Build capture settings.
+    /// - Parameter preferRAW: request ProRAW/RAW for the cleanest single frame.
+    ///   Stacking passes `false` — many fast processed frames align + average
+    ///   into a result that beats one RAW for noise, without the per-frame cost.
+    private func makePhotoSettings(preferRAW: Bool) -> AVCapturePhotoSettings {
         let settings: AVCapturePhotoSettings
-        if photoOutput.availablePhotoCodecTypes.contains(.hevc) {
+
+        // Best negative first (when asked): Apple ProRAW, then plain RAW,
+        // otherwise a fast HEVC frame for stacking.
+        if preferRAW, photoOutput.isAppleProRAWEnabled,
+           let raw = photoOutput.availableRawPhotoPixelFormatTypes.first(where: {
+               AVCapturePhotoOutput.isAppleProRAWPixelFormat($0)
+           }) {
+            settings = AVCapturePhotoSettings(rawPixelFormatType: raw)
+        } else if preferRAW, let raw = photoOutput.availableRawPhotoPixelFormatTypes.first {
+            settings = AVCapturePhotoSettings(rawPixelFormatType: raw)
+        } else if photoOutput.availablePhotoCodecTypes.contains(.hevc) {
             settings = AVCapturePhotoSettings(
                 format: [AVVideoCodecKey: AVVideoCodecType.hevc])
         } else {
             settings = AVCapturePhotoSettings()
         }
-        // System Night Mode assist: let the long capture run to its maximum
-        // when the output supports it.
-        if photoOutput.maxPhotoQualityPrioritization.rawValue >= AVCapturePhotoOutput.QualityPrioritization.quality.rawValue {
-            settings.photoQualityPrioritization = .quality
+
+        // Quality over speed — the tripod means we can afford the full pass.
+        settings.photoQualityPrioritization = .quality
+
+        // Capture at the sensor's maximum resolution (48 MP on Pro sensors).
+        if #available(iOS 16.0, *) {
+            settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
         }
+
         return settings
     }
 
@@ -127,7 +209,8 @@ final class NightCapture: NSObject, ObservableObject {
         guard stackCount < stackTarget else {
             finishStack(); return
         }
-        photoOutput.capturePhoto(with: makePhotoSettings(), delegate: self)
+        // Fast processed frames for the stack (RAW is reserved for single shots).
+        photoOutput.capturePhoto(with: makePhotoSettings(preferRAW: false), delegate: self)
     }
 
     /// Average frames together. Averaging N frames drops read-noise by √N while
@@ -163,6 +246,16 @@ final class NightCapture: NSObject, ObservableObject {
 
     // MARK: - Save
 
+    /// Render a single CIImage (processed or RAW) to a UIImage and save it.
+    private func renderAndSave(_ ci: CIImage) {
+        guard let cg = ciContext.createCGImage(ci, from: ci.extent) else {
+            state = .failed("Could not render frame"); return
+        }
+        let image = UIImage(cgImage: cg)
+        lastImage = image
+        save(image)
+    }
+
     private func save(_ image: UIImage) {
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
             guard status == .authorized || status == .limited else {
@@ -189,19 +282,21 @@ extension NightCapture: AVCapturePhotoCaptureDelegate {
             Task { @MainActor in self.state = .failed(error.localizedDescription) }
             return
         }
-        guard let data = photo.fileDataRepresentation(),
-              let ui = UIImage(data: data),
-              let cg = ui.cgImage else {
+        guard let data = photo.fileDataRepresentation() else {
             Task { @MainActor in self.state = .failed("No image data") }
             return
         }
-        let ci = CIImage(cgImage: cg)
+        // CoreImage decodes both processed frames and RAW/DNG (ProRAW) — the
+        // right path when the negative is a RAW file UIImage can't render.
+        guard let ci = CIImage(data: data) else {
+            Task { @MainActor in self.state = .failed("Could not decode frame") }
+            return
+        }
         Task { @MainActor in
             if self.stackTarget > 1 {
                 self.accumulate(ci)
             } else {
-                self.lastImage = ui
-                self.save(ui)
+                self.renderAndSave(ci)
             }
         }
     }
