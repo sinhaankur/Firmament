@@ -54,10 +54,15 @@ struct CaptureControls: View {
 
     @State private var showSettings = false    // expandable pro controls
 
+    @State private var activePreset: String?
+
     var body: some View {
         VStack(spacing: 10) {
             // Pure Photography vs. Sky (astronomy overlay) + grid.
             pureBar
+
+            // One-tap subject presets.
+            if !isTimelapse { presetRow }
 
             // One quiet info line — tap to see the advisor + hardware detail.
             infoBar
@@ -97,6 +102,59 @@ struct CaptureControls: View {
         }
         .padding(.bottom, 8)
         .animation(.easeInOut(duration: 0.2), value: showSettings)
+    }
+
+    // MARK: - Capture presets (one-tap subjects)
+
+    private var presetRow: some View {
+        VStack(spacing: 3) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(CapturePreset.all) { preset in
+                        Button { applyPreset(preset) } label: {
+                            VStack(spacing: 2) {
+                                Image(systemName: preset.sfSymbol).font(.system(size: 15))
+                                Text(preset.name).font(.system(size: 9, weight: .medium))
+                            }
+                            .frame(width: 62, height: 44)
+                            .background(activePreset == preset.id ? Color.white.opacity(0.18) : Color.white.opacity(0.06),
+                                        in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10)
+                                .stroke(activePreset == preset.id ? .cyan : .clear, lineWidth: 1))
+                            .foregroundStyle(.white)
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            if let id = activePreset, let p = CapturePreset.all.first(where: { $0.id == id }) {
+                Text(p.hint)
+                    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+                    .multilineTextAlignment(.center).padding(.horizontal, 20)
+            }
+        }
+    }
+
+    /// Apply a preset to the live camera + capture state, clamped to the device.
+    private func applyPreset(_ p: CapturePreset) {
+        activePreset = p.id
+        // Manual exposure to the preset's ISO + shutter.
+        manualMode = true
+        manualISO = p.iso
+        manualShutter = p.shutterSeconds
+        camera.manualExposure = true
+        camera.setManualExposure(iso: p.iso, seconds: p.shutterSeconds)
+        // Total integration (stacking).
+        totalExposure = p.totalExposureSeconds
+        // Zoom + focus.
+        camera.setZoom(CGFloat(p.zoom))
+        if p.focusInfinity {
+            manualFocusMode = true
+            camera.manualFocus = true
+            camera.setManualFocus(1.0)
+        }
+        // Reveal the settings so the user sees what changed.
+        showSettings = true
     }
 
     // MARK: - Pure Photography / Sky toggle + grid

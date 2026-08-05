@@ -136,6 +136,19 @@ struct RootView: View {
                     .transition(.opacity)
                     .zIndex(10)
             }
+
+            // Photo editor — presented as a top-level overlay (NOT a system
+            // sheet/cover) so it can never conflict with the Photos picker's own
+            // presentation. This is what fixes "picker closes, nothing opens".
+            if let editable = editingItem {
+                PhotoEditorView(original: editable.image, meta: editable.meta) {
+                    editingItem = nil
+                    night.capturedForEditing = nil
+                }
+                .transition(.opacity)
+                .zIndex(20)
+                .ignoresSafeArea()
+            }
         }
         // Night-vision red wash — preserves dark adaptation (every serious
         // stargazing app has this). Multiply keeps the sky visible, killed blue/green.
@@ -177,15 +190,8 @@ struct RootView: View {
             SettingsSheet(showConstellations: $showConstellations,
                           nightVision: $nightVision)
         }
-        // A single editor cover, driven by an explicit @State item so both
-        // capture and import present reliably (a computed binding wouldn't
-        // re-trigger presentation).
-        .fullScreenCover(item: $editingItem) { editable in
-            PhotoEditorView(original: editable.image, meta: editable.meta) {
-                editingItem = nil
-                night.capturedForEditing = nil
-            }
-        }
+        // (The editor is presented as a top-level ZStack overlay above, not a
+        // system cover, so it never conflicts with the Photos picker sheet.)
         // Capture finished → open the editor.
         .onChange(of: night.captureSerial) { _, _ in
             if let ci = night.capturedForEditing {
@@ -209,19 +215,17 @@ struct RootView: View {
     /// Videos / time-lapses are frame-stacked into one brighter still. Photos are
     /// orientation-corrected (HEIC/JPEG carry EXIF rotation CIImage ignores).
     private func loadPickedImage(_ item: PhotosPickerItem) async {
-        // Clear the picker selection first so its sheet fully dismisses before
-        // we try to present the editor (presenting during dismissal is dropped).
-        await MainActor.run { libraryPick = nil }
-
         var loaded: CIImage?
+        let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
 
-        // Video / time-lapse → stack frames into one still.
-        if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+        if isVideo {
+            // Video / time-lapse → stack frames into one still.
             if let movie = try? await item.loadTransferable(type: VideoImporter.Movie.self) {
                 loaded = await VideoImporter().stackedFrame(from: movie.url)
             }
         } else {
-            // Photo → decode with orientation baked in.
+            // Photo → try Data (works for iCloud-downloaded assets), decode with
+            // orientation baked in.
             if let data = try? await item.loadTransferable(type: Data.self) {
                 if let ui = UIImage(data: data) {
                     let fixed = ui.normalizedUp()
@@ -234,16 +238,22 @@ struct RootView: View {
             }
         }
 
+        // Reset the picker binding so the same item can be re-picked later, and
+        // so its sheet is fully torn down before we present the editor.
+        await MainActor.run { libraryPick = nil }
+
         guard let image = loaded,
               !image.extent.isEmpty, !image.extent.isInfinite, !image.extent.isNull else {
-            await MainActor.run { importError = "That photo or video couldn't be decoded." }
+            await MainActor.run { importError = "That photo or video couldn't be decoded (it may still be downloading from iCloud)." }
             return
         }
 
-        // Let the picker sheet finish dismissing, then present the editor.
-        try? await Task.sleep(nanoseconds: 350_000_000)
+        // Small settle so the picker sheet is gone, then show the editor overlay.
+        try? await Task.sleep(nanoseconds: 250_000_000)
         await MainActor.run {
-            editingItem = EditableImage(image: image, meta: .init())
+            withAnimation(.easeInOut(duration: 0.2)) {
+                editingItem = EditableImage(image: image, meta: .init())
+            }
         }
     }
 

@@ -30,17 +30,19 @@ struct PhotoEditorView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            preview
-            if let h = histogram {
-                HistogramView(r: h.r, g: h.g, b: h.b)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
+        ZStack {
+            Color.black.ignoresSafeArea()   // fully cover the camera behind us
+            VStack(spacing: 0) {
+                header
+                preview
+                if let h = histogram {
+                    HistogramView(r: h.r, g: h.g, b: h.b)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                }
+                controls
             }
-            controls
         }
-        .background(.black)
         .onAppear {
             runAutoDevelop()   // reveal the real sky immediately
             renderPreview()
