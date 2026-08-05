@@ -53,6 +53,7 @@ struct RootView: View {
     @AppStorage("pureMode") private var pureMode = false
     @AppStorage("showGrid") private var showGrid = false
     @State private var peakingOn = false
+    @Environment(\.scenePhase) private var scenePhase
     private let weather = WeatherProvider()
 
     var body: some View {
@@ -208,6 +209,16 @@ struct RootView: View {
                                     set: { if !$0 { importError = nil } })) {
             Button("OK", role: .cancel) { importError = nil }
         } message: { Text(importError ?? "") }
+        // Pause sensors + camera when backgrounded (battery), resume on return.
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                if hasOnboarded { startSensors() }
+            case .background, .inactive:
+                model.stop(); camera.stop()
+            @unknown default: break
+            }
+        }
         .onDisappear { model.stop(); camera.stop(); telescope.disconnect() }
     }
 
@@ -340,6 +351,7 @@ struct RootView: View {
                     .padding(8)
                     .background(.black.opacity(0.35), in: Circle())
             }
+            .accessibilityLabel("Telescope")
             // Open an existing photo, video, or timelapse to auto-develop + edit.
             PhotosPicker(selection: $libraryPick,
                          matching: .any(of: [.images, .videos])) {
@@ -349,6 +361,7 @@ struct RootView: View {
                     .padding(8)
                     .background(.black.opacity(0.35), in: Circle())
             }
+            .accessibilityLabel("Open a photo or video to edit")
             Button {
                 showSettings = true
             } label: {
@@ -358,6 +371,7 @@ struct RootView: View {
                     .padding(8)
                     .background(.black.opacity(0.35), in: Circle())
             }
+            .accessibilityLabel("Settings")
             Text(model.date, style: .time)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.7))
@@ -389,5 +403,7 @@ struct RootView: View {
                 .foregroundStyle(isActive ? Color.black : Color.white)
                 .background(isActive ? Color.white : Color.clear, in: Capsule())
         }
+        .accessibilityLabel("\(m.rawValue) mode")
+        .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 }

@@ -279,6 +279,7 @@ struct CaptureControls: View {
                     }
                 }
             }
+            .accessibilityLabel(timelapse.isRecording ? "Stop time-lapse recording" : "Start time-lapse recording")
         }
     }
 
@@ -355,6 +356,8 @@ struct CaptureControls: View {
         }
         .disabled(isBusy || countdown != nil)
         .opacity(isBusy ? 0.5 : 1)
+        .accessibilityLabel("Shutter")
+        .accessibilityHint(stackCount > 1 ? "Captures \(stackCount) stacked frames" : "Takes a photo")
     }
 
     /// Fire now, or run the self-timer countdown first.
