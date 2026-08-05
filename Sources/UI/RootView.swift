@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreImage
+import PhotosUI
 
 /// Identifiable wrapper so a freshly captured CIImage can drive a
 /// `fullScreenCover(item:)` into the editor.
@@ -23,6 +24,8 @@ struct RootView: View {
     @State private var selected: SkyObject?
     @State private var showTelescope = false
     @State private var showSettings = false
+    @State private var libraryPick: PhotosPickerItem?
+    @State private var importedForEditing: CIImage?
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
     @AppStorage("nightVision") private var nightVision = false
@@ -66,6 +69,7 @@ struct RootView: View {
                 }
                 if mode == .capture {
                     CaptureControls(night: night, motion: model.motion,
+                                    camera: camera,
                                     profile: camera.profile,
                                     advice: advisor.advice,
                                     inFrame: inFrameSubjects)
@@ -116,7 +120,10 @@ struct RootView: View {
             if ready { night.attach(to: camera) }
         }
         .onChange(of: mode) { _, newMode in
-            if newMode == .capture { Task { await refreshAdvice() } }
+            if newMode == .capture {
+                OnDeviceLLM.shared.prewarm()   // warm the model before we phrase
+                Task { await refreshAdvice() }
+            }
         }
         .sheet(isPresented: $showTelescope) {
             TelescopeSheet(telescope: telescope)
@@ -134,7 +141,33 @@ struct RootView: View {
                 night.capturedForEditing = nil
             }
         }
+        // Editing an existing photo / timelapse frame picked from the library.
+        .fullScreenCover(item: Binding(
+            get: { importedForEditing.map { EditableImage(image: $0) } },
+            set: { if $0 == nil { importedForEditing = nil } }
+        )) { editable in
+            // No capture metadata for library images — AutoDevelop reasons from
+            // the pixels alone (mean luminance), which is exactly the case that
+            // inspired it: recovering an already-shot dark frame.
+            PhotoEditorView(original: editable.image, meta: .init()) {
+                importedForEditing = nil
+            }
+        }
+        .onChange(of: libraryPick) { _, item in
+            guard let item else { return }
+            Task { await loadPickedImage(item) }
+        }
         .onDisappear { model.stop(); camera.stop(); telescope.disconnect() }
+    }
+
+    /// Load a library-picked image into a CIImage and open the editor.
+    private func loadPickedImage(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let ci = CIImage(data: data) else { return }
+        await MainActor.run {
+            importedForEditing = ci
+            libraryPick = nil
+        }
     }
 
     /// Start the sensors + camera. Called after onboarding, so the system
@@ -217,6 +250,14 @@ struct RootView: View {
                 Image(systemName: telescope.isConnected ? "scope" : "antenna.radiowaves.left.and.right")
                     .font(.system(size: 14))
                     .foregroundStyle(telescope.isConnected ? .green : .white.opacity(0.7))
+                    .padding(8)
+                    .background(.black.opacity(0.35), in: Circle())
+            }
+            // Open an existing photo / timelapse frame to auto-develop + edit.
+            PhotosPicker(selection: $libraryPick, matching: .images) {
+                Image(systemName: "photo.on.rectangle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white.opacity(0.7))
                     .padding(8)
                     .background(.black.opacity(0.35), in: Circle())
             }

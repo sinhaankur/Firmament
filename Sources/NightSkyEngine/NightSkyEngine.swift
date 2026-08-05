@@ -68,9 +68,14 @@ struct NightSkyEngine {
         }
     }
 
-    func stars(at date: Date) -> [SkyObject] {
+    /// Resolve stars to sky positions. By default only the labeled/bright set
+    /// (named stars + brighter than mag 3) is returned, which keeps the overlay
+    /// light; pass `full: true` to resolve the whole naked-eye catalog (~8,900).
+    func stars(at date: Date, full: Bool = false, magnitudeLimit: Double = 6.5) -> [SkyObject] {
         let jd = SkyMath.julianDay(from: date)
-        return StarCatalog.bright.map { s in
+        let source = full ? StarCatalog.all : StarCatalog.bright
+        return source.compactMap { s in
+            guard s.magnitude <= magnitudeLimit else { return nil }
             let h = horizontal(raDeg: s.raDeg, decDeg: s.decDeg, jd: jd)
             return SkyObject(
                 id: "star.\(s.id)", name: s.name, kind: .star,

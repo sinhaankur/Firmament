@@ -36,6 +36,7 @@ targets:
         NSLocationWhenInUseUsageDescription: "Firmament uses your location to compute exactly where each star, planet, and satellite is in your sky."
         NSMotionUsageDescription: "Firmament uses motion sensors to know where your phone is pointing and to detect when it's steady on a tripod."
         NSPhotoLibraryAddUsageDescription: "Firmament saves your captured night-sky photos to your photo library."
+        NSPhotoLibraryUsageDescription: "Firmament can open an existing photo or time-lapse frame from your library to auto-develop and edit it."
         # LiDAR / world tracking hint
         NSWorldSensingUsageDescription: "Firmament uses the LiDAR scanner to detect the horizon and nearby objects so the sky overlay is correctly occluded."
     settings:

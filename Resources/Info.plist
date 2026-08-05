@@ -28,6 +28,8 @@
 	<string>Firmament uses motion sensors to know where your phone is pointing and to detect when it's steady on a tripod.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Firmament saves your captured night-sky photos to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Firmament can open an existing photo or time-lapse frame from your library to auto-develop and edit it.</string>
 	<key>NSWorldSensingUsageDescription</key>
 	<string>Firmament uses the LiDAR scanner to detect the horizon and nearby objects so the sky overlay is correctly occluded.</string>
 	<key>UILaunchScreen</key>

@@ -42,7 +42,7 @@ struct PhotoEditorView: View {
         .onChange(of: adj) { _, _ in renderPreview() }
     }
 
-    private let llm = OnDeviceLLM()
+    private let llm = OnDeviceLLM.shared
 
     /// The signature move: analyze the frame + capture settings and auto-recover
     /// the night sky, with a plain-language explanation of what it was. The

@@ -18,6 +18,8 @@ struct SkyOverlayView: View {
             let vFov = horizontalFovDegrees * Double(geo.size.height / max(geo.size.width, 1))
             let placedItems = placed(in: geo.size, vFov: vFov)
             ZStack {
+                // Full naked-eye star field as points (drawn first, behind labels).
+                starFieldCanvas(in: geo.size, vFov: vFov)
                 if showConstellations {
                     constellationLines(placedItems)
                 }
@@ -51,6 +53,31 @@ struct SkyOverlayView: View {
                     if pen { path.addLine(to: pt) } else { path.move(to: pt); pen = true }
                 }
                 ctx.stroke(path, with: .color(.white.opacity(0.28)), lineWidth: 1.2)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// Draw the full naked-eye star field as points via a single Canvas — cheap
+    /// even at ~8,900 stars because it's one draw pass, not thousands of views.
+    /// Brighter stars → bigger, more opaque dots.
+    private func starFieldCanvas(in size: CGSize, vFov: Double) -> some View {
+        let p = model.pointing
+        let field = model.starField
+        return Canvas { ctx, _ in
+            for star in field {
+                guard star.alt > -3 else { continue }
+                guard let norm = SkyProjection.project(
+                    objectAz: star.az, objectAlt: star.alt, pointing: p,
+                    hFovDeg: horizontalFovDegrees, vFovDeg: vFov
+                ) else { continue }
+                let x = norm.x * size.width, y = norm.y * size.height
+                // Size + brightness from magnitude (−1.5…6.5 → big…tiny).
+                let m = star.mag
+                let radius = max(0.5, min(2.6, 2.3 - m * 0.32))
+                let opacity = max(0.18, min(1.0, 1.05 - m * 0.13))
+                let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                ctx.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
             }
         }
         .allowsHitTesting(false)

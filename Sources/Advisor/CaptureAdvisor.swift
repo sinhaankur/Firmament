@@ -20,14 +20,25 @@ final class CaptureAdvisor: ObservableObject {
     /// The concrete settings the recommendation resolves to.
     @Published var recipe: CaptureRecipe?
 
-    /// Recompute from the latest conditions + device profile.
+    /// Recompute from the latest conditions + device profile. The rule engine
+    /// decides the recipe and provides immediate deterministic phrasing; if the
+    /// on-device model is available it then refines *only the wording*.
     func update(conditions: SkyConditions?, profile: DeviceCaptureProfile?) {
         guard let conditions else {
             advice = ""; recipe = nil; return
         }
         let recipe = Self.recommend(for: conditions, profile: profile)
         self.recipe = recipe
-        self.advice = Self.phrase(recipe, conditions)
+        self.advice = Self.phrase(recipe, conditions)      // instant, deterministic
+
+        // Optional natural-language refinement (never changes the numbers).
+        guard OnDeviceLLM.isAvailable else { return }
+        Task { [weak self] in
+            if let nicer = await OnDeviceLLM.shared.phrase(recipe: recipe, conditions: conditions),
+               !nicer.isEmpty {
+                self?.advice = nicer
+            }
+        }
     }
 
     // MARK: - Deterministic rule engine (the part that decides)

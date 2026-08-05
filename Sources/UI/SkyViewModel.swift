@@ -21,6 +21,12 @@ final class SkyViewModel: ObservableObject {
     /// Soonest upcoming visible pass across the tracked satellites.
     @Published private(set) var nextPass: SatelliteTracker.Pass?
 
+    /// The full naked-eye star field as (alt, az, magnitude) for the point
+    /// layer. Recomputed at a low rate (stars move slowly); rendered as dots by
+    /// the overlay's Canvas so ~8,900 stars stay cheap.
+    @Published private(set) var starField: [(alt: Double, az: Double, mag: Double)] = []
+    private var lastStarFieldAt = Date.distantPast
+
     let location = LocationService()
     let motion = MotionService()
     private let satTracker = SatelliteTracker()
@@ -69,6 +75,16 @@ final class SkyViewModel: ObservableObject {
         recomputeSatellites(observer: observer)
         all.append(contentsOf: satellites)   // show satellites as labels too
         objects = all
+        recomputeStarField(engine: engine)
+    }
+
+    /// Refresh the full point-field ~every 2s (stars barely move at this scale).
+    private func recomputeStarField(engine: NightSkyEngine) {
+        guard Date().timeIntervalSince(lastStarFieldAt) > 2 else { return }
+        lastStarFieldAt = Date()
+        starField = engine.stars(at: date, full: true).map {
+            (alt: $0.altitude, az: $0.azimuth, mag: $0.magnitude ?? 6)
+        }
     }
 
     /// Resolve all tracked satellites' look angles for the overlay + Spot mode.

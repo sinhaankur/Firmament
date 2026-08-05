@@ -96,6 +96,44 @@ final class CameraEngine: ObservableObject {
         return Double(fmt.videoFieldOfView)
     }
 
+    // MARK: - Zoom
+
+    /// Current zoom factor (1.0 = the lens's native field of view).
+    @Published var zoomFactor: CGFloat = 1.0
+
+    /// The maximum zoom we allow — capped well below the hardware max because
+    /// heavy digital zoom is just cropping (noisy on faint sky).
+    var maxAllowedZoom: CGFloat {
+        guard let d = videoDevice else { return 1 }
+        return min(d.activeFormat.videoMaxZoomFactor, 10)
+    }
+
+    /// Zoom factors at/below which the switch is still *optical* (lens change),
+    /// not digital cropping — good to know, since optical keeps quality.
+    var opticalZoomStops: [CGFloat] {
+        videoDevice?.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) } ?? []
+    }
+
+    /// True if the current zoom is still within an optical stop (no quality loss).
+    var isOpticalZoom: Bool {
+        guard let maxOptical = opticalZoomStops.max() else { return zoomFactor <= 1.01 }
+        return zoomFactor <= maxOptical + 0.01
+    }
+
+    /// Set the zoom factor (clamped), on the device.
+    func setZoom(_ factor: CGFloat) {
+        guard let device = videoDevice else { return }
+        let clamped = max(1, min(maxAllowedZoom, factor))
+        sessionQueue.async {
+            do {
+                try device.lockForConfiguration()
+                device.videoZoomFactor = clamped
+                device.unlockForConfiguration()
+            } catch {}
+        }
+        zoomFactor = clamped
+    }
+
     func stop() {
         sessionQueue.async { [weak self] in self?.session.stopRunning() }
     }

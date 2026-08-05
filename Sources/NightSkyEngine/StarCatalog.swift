@@ -1,72 +1,113 @@
 import Foundation
 
-/// A compact bundled catalog of the brightest / most recognizable stars.
-///
-/// Positions are J2000 right ascension / declination (degrees) and apparent
-/// visual magnitude, from the Yale Bright Star Catalogue / Hipparcos. Proper
-/// motion is ignored (negligible for naked-eye pointing over decades). This is
-/// a starter set for Phase 0 — the full HYG catalog slots in behind the same
-/// `Star` type in Phase 1.
+/// A single star. Positions are J2000 right ascension / declination (degrees)
+/// and apparent visual magnitude. Proper motion is ignored (negligible for
+/// naked-eye pointing over decades).
 struct Star: Identifiable {
-    let id: String        // common name
+    /// Stable identifier: the proper name if it has one, else "HYG-<index>".
+    let id: String
     let raDeg: Double
     let decDeg: Double
     let magnitude: Double
-    var name: String { id }
+    /// Colour index (B−V), for tinting; 0 if unknown.
+    let colorIndex: Double
+    /// Proper name if this star has one (Sirius, Vega, …), else nil.
+    let properName: String?
+    var name: String { properName ?? id }
 }
 
+/// The bundled star catalog. Loads the full naked-eye sky (~8,900 stars to
+/// magnitude 6.5) from `stars.bin` — a compact binary derived from the **HYG
+/// database** (Hipparcos + Yale + Gliese).
+///
+/// Attribution: HYG database by David Nash / astronexus.com, licensed
+/// **CC BY-SA 4.0**. Firmament bundles a filtered, reformatted subset (naked-eye
+/// stars, brightest-first) and credits it in the app's Settings → Data. This is
+/// reference data, not code, and is redistributed under the same licence.
 enum StarCatalog {
-    /// ~40 of the brightest stars, spanning both hemispheres.
-    static let bright: [Star] = [
-        Star(id: "Sirius",      raDeg: 101.287,  decDeg: -16.716, magnitude: -1.46),
-        Star(id: "Canopus",     raDeg: 95.988,   decDeg: -52.696, magnitude: -0.74),
-        Star(id: "Rigil Kent.", raDeg: 219.902,  decDeg: -60.834, magnitude: -0.27),
-        Star(id: "Arcturus",    raDeg: 213.915,  decDeg: 19.182,  magnitude: -0.05),
-        Star(id: "Vega",        raDeg: 279.234,  decDeg: 38.784,  magnitude: 0.03),
-        Star(id: "Capella",     raDeg: 79.172,   decDeg: 45.998,  magnitude: 0.08),
-        Star(id: "Rigel",       raDeg: 78.634,   decDeg: -8.202,  magnitude: 0.13),
-        Star(id: "Procyon",     raDeg: 114.826,  decDeg: 5.225,   magnitude: 0.34),
-        Star(id: "Betelgeuse",  raDeg: 88.793,   decDeg: 7.407,   magnitude: 0.50),
-        Star(id: "Achernar",    raDeg: 24.429,   decDeg: -57.237, magnitude: 0.46),
-        Star(id: "Hadar",       raDeg: 210.956,  decDeg: -60.373, magnitude: 0.61),
-        Star(id: "Altair",      raDeg: 297.696,  decDeg: 8.868,   magnitude: 0.76),
-        Star(id: "Acrux",       raDeg: 186.650,  decDeg: -63.099, magnitude: 0.77),
-        Star(id: "Aldebaran",   raDeg: 68.980,   decDeg: 16.509,  magnitude: 0.85),
-        Star(id: "Antares",     raDeg: 247.352,  decDeg: -26.432, magnitude: 1.09),
-        Star(id: "Spica",       raDeg: 201.298,  decDeg: -11.161, magnitude: 1.04),
-        Star(id: "Pollux",      raDeg: 116.329,  decDeg: 28.026,  magnitude: 1.14),
-        Star(id: "Fomalhaut",   raDeg: 344.413,  decDeg: -29.622, magnitude: 1.16),
-        Star(id: "Deneb",       raDeg: 310.358,  decDeg: 45.280,  magnitude: 1.25),
-        Star(id: "Mimosa",      raDeg: 191.930,  decDeg: -59.689, magnitude: 1.25),
-        Star(id: "Regulus",     raDeg: 152.093,  decDeg: 11.967,  magnitude: 1.35),
-        Star(id: "Adhara",      raDeg: 104.656,  decDeg: -28.972, magnitude: 1.50),
-        Star(id: "Castor",      raDeg: 113.650,  decDeg: 31.888,  magnitude: 1.57),
-        Star(id: "Shaula",      raDeg: 263.402,  decDeg: -37.104, magnitude: 1.62),
-        Star(id: "Bellatrix",   raDeg: 81.283,   decDeg: 6.350,   magnitude: 1.64),
-        Star(id: "Elnath",      raDeg: 81.573,   decDeg: 28.608,  magnitude: 1.65),
-        Star(id: "Alnilam",     raDeg: 84.053,   decDeg: -1.202,  magnitude: 1.69),
-        Star(id: "Alnitak",     raDeg: 85.190,   decDeg: -1.943,  magnitude: 1.74),
-        Star(id: "Alioth",      raDeg: 193.507,  decDeg: 55.960,  magnitude: 1.77),
-        Star(id: "Dubhe",       raDeg: 165.932,  decDeg: 61.751,  magnitude: 1.79),
-        Star(id: "Mirfak",      raDeg: 51.081,   decDeg: 49.861,  magnitude: 1.79),
-        Star(id: "Polaris",     raDeg: 37.955,   decDeg: 89.264,  magnitude: 1.98),
-        Star(id: "Alkaid",      raDeg: 206.885,  decDeg: 49.313,  magnitude: 1.85),
-        Star(id: "Mintaka",     raDeg: 83.002,   decDeg: -0.299,  magnitude: 2.23),
-        Star(id: "Merak",       raDeg: 165.460,  decDeg: 56.383,  magnitude: 2.37),
-        Star(id: "Phecda",      raDeg: 178.458,  decDeg: 53.695,  magnitude: 2.44),
-        Star(id: "Megrez",      raDeg: 183.857,  decDeg: 57.033,  magnitude: 3.31),
-        Star(id: "Mizar",       raDeg: 200.981,  decDeg: 54.925,  magnitude: 2.04),
-        Star(id: "Denebola",    raDeg: 177.265,  decDeg: 14.572,  magnitude: 2.11),
-        Star(id: "Algol",       raDeg: 47.042,   decDeg: 40.956,  magnitude: 2.12),
-    ]
 
-    static func star(named name: String) -> Star? {
-        bright.first { $0.id == name }
+    /// All bundled stars (lazily loaded once, brightest-first).
+    static let all: [Star] = loadStars()
+
+    /// Named + bright stars, for constellation lookup and labeling. (Everything
+    /// with a proper name plus everything brighter than mag 3.)
+    static let bright: [Star] = all.filter { $0.properName != nil || $0.magnitude < 3.0 }
+
+    /// Fast lookup of a star by its proper name (e.g. "Betelgeuse").
+    static let byName: [String: Star] = {
+        var d: [String: Star] = [:]
+        for s in all { if let n = s.properName { d[n] = s } }
+        return d
+    }()
+
+    static func star(named name: String) -> Star? { byName[name] }
+
+    // MARK: - Binary loader
+
+    /// Parse `stars.bin`. Format (little-endian): magic "FSTR", uint32 count,
+    /// then per star: float32 ra, dec, mag, ci, uint8 nameLen, name bytes.
+    private static func loadStars() -> [Star] {
+        guard let url = Bundle.main.url(forResource: "stars", withExtension: "bin"),
+              let data = try? Data(contentsOf: url), data.count > 8 else {
+            return fallback
+        }
+        return data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> [Star] in
+            var offset = 0
+            func u8() -> UInt8 { defer { offset += 1 }; return raw[offset] }
+            func u32() -> UInt32 {
+                let v = raw.loadUnaligned(fromByteOffset: offset, as: UInt32.self)
+                offset += 4; return UInt32(littleEndian: v)
+            }
+            func f32() -> Float {
+                let bits = raw.loadUnaligned(fromByteOffset: offset, as: UInt32.self)
+                offset += 4
+                return Float(bitPattern: UInt32(littleEndian: bits))
+            }
+
+            // Magic.
+            guard raw[0] == 0x46, raw[1] == 0x53, raw[2] == 0x54, raw[3] == 0x52 else {
+                return fallback
+            }
+            offset = 4
+            let count = Int(u32())
+            var out: [Star] = []
+            out.reserveCapacity(count)
+            for i in 0..<count {
+                guard offset + 17 <= raw.count else { break }
+                let ra = Double(f32())
+                let dec = Double(f32())
+                let mag = Double(f32())
+                let ci = Double(f32())
+                let nameLen = Int(u8())
+                var name = ""
+                if nameLen > 0, offset + nameLen <= raw.count {
+                    let bytes = Array(UnsafeBufferPointer(
+                        start: raw.baseAddress!.advanced(by: offset).assumingMemoryBound(to: UInt8.self),
+                        count: nameLen))
+                    name = String(decoding: bytes, as: UTF8.self)
+                    offset += nameLen
+                }
+                let hasName = !name.isEmpty
+                out.append(Star(
+                    id: hasName ? name : "HYG-\(i)",
+                    raDeg: ra, decDeg: dec, magnitude: mag, colorIndex: ci,
+                    properName: hasName ? name : nil))
+            }
+            return out
+        }
     }
+
+    /// A tiny hardcoded fallback if the binary is missing — keeps the app usable.
+    private static let fallback: [Star] = [
+        Star(id: "Sirius", raDeg: 101.287, decDeg: -16.716, magnitude: -1.46, colorIndex: 0.0, properName: "Sirius"),
+        Star(id: "Vega", raDeg: 279.234, decDeg: 38.784, magnitude: 0.03, colorIndex: 0.0, properName: "Vega"),
+        Star(id: "Polaris", raDeg: 37.955, decDeg: 89.264, magnitude: 1.98, colorIndex: 0.6, properName: "Polaris"),
+        Star(id: "Betelgeuse", raDeg: 88.793, decDeg: 7.407, magnitude: 0.50, colorIndex: 1.85, properName: "Betelgeuse"),
+    ]
 }
 
 /// Constellation stick-figures, as ordered lists of star names. Each adjacent
-/// pair is a line segment. Only stars present in `StarCatalog.bright` are used.
+/// pair is a line segment. Only stars present by proper name are drawn.
 enum Constellations {
     struct Figure { let name: String; let path: [String] }
 

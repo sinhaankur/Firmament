@@ -144,8 +144,9 @@ final class NightCapture: NSObject, ObservableObject {
                 device.setWhiteBalanceModeLocked(with: gains, completionHandler: nil)
             }
 
-            // Kill any digital zoom — full sensor, full field of view.
-            device.videoZoomFactor = 1.0
+            // Note: we no longer force zoom to 1.0 here — the user's chosen zoom
+            // (great for the Moon/planets) is respected. The Capture UI warns
+            // when zoom crosses into digital-crop territory on faint sky.
 
             device.unlockForConfiguration()
         } catch {

@@ -22,9 +22,12 @@ struct SettingsSheet: View {
 
                 Section("Data") {
                     row("Positions", "Meeus / JPL ephemeris")
-                    row("Stars", "Yale Bright Star Catalogue")
+                    row("Stars", "HYG database (CC BY-SA 4.0)")
                     row("Satellites", "SGP4 from bundled TLE")
                     row("Weather", "Open-Meteo (keyless)")
+                    Text("Star data: the HYG database by David Nash / astronexus.com, licensed CC BY-SA 4.0. Firmament bundles a naked-eye subset (~8,900 stars to magnitude 6.5).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Privacy") {

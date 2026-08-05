@@ -6,6 +6,8 @@ import SwiftUI
 struct CaptureControls: View {
     @ObservedObject var night: NightCapture
     @ObservedObject var motion: MotionService
+    /// The camera engine, for the zoom control.
+    @ObservedObject var camera: CameraEngine
     /// The active camera's honest capabilities (drives stack depth + summary).
     var profile: DeviceCaptureProfile?
     /// Optional one-line advice from the capture advisor.
@@ -15,12 +17,28 @@ struct CaptureControls: View {
 
     @State private var timerSeconds = 0        // self-timer: 0 / 3 / 10
     @State private var countdown: Int?         // live countdown display
+    /// Target total integration time (seconds). "Auto" = 0 → use the profile's
+    /// suggested depth. Otherwise total exposure is achieved by stacking frames,
+    /// which is how we get well past the ~1s single-frame hardware ceiling.
+    @State private var totalExposure: Double = 0
+    private let exposureSteps: [Double] = [0, 5, 10, 20, 30, 60, 120, 240]
 
-    // Tripod-steady → a deep stack sized to this device's exposure ceiling;
-    // hand-held → one shot. Depth comes from the detected profile.
+    /// Per-frame exposure the hardware honestly allows (seconds).
+    private var perFrame: Double { max(0.1, min(1.0, profile?.maxExposureSeconds ?? 1.0)) }
+
+    // Frames to stack. Auto → profile suggestion (tripod) or 1 (handheld).
+    // A chosen total exposure → total / per-frame, capped for sanity.
     private var stackCount: Int {
+        if totalExposure > 0 {
+            return max(1, min(600, Int((totalExposure / perFrame).rounded())))
+        }
         guard motion.isSteady else { return 1 }
         return profile?.suggestedStackFrames ?? 24
+    }
+
+    /// The effective total integration time for the current setting.
+    private var effectiveTotalSeconds: Double {
+        totalExposure > 0 ? totalExposure : Double(stackCount) * perFrame
     }
 
     var body: some View {
@@ -46,6 +64,8 @@ struct CaptureControls: View {
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.black.opacity(0.4), in: Capsule())
             }
+            zoomPicker
+            exposurePicker
             levelIndicator
             stabilityChip
             statusLine
@@ -168,6 +188,80 @@ struct CaptureControls: View {
             }
         }
         .foregroundStyle(level ? .green : .white.opacity(0.6))
+    }
+
+    // MARK: - Zoom picker
+
+    /// Zoom presets. Optical stops keep quality; higher is digital crop (noisy on
+    /// faint sky, but fine for the bright Moon/planets — the UI says which).
+    private var zoomPicker: some View {
+        let stops: [CGFloat] = [1, 2, 3, 5]
+        let digital = !camera.isOpticalZoom && camera.zoomFactor > 1.01
+        return VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                ForEach(stops.filter { $0 <= camera.maxAllowedZoom }, id: \.self) { z in
+                    zoomButton(z)
+                }
+            }
+            if digital {
+                Text("Digital zoom — great for the Moon & planets, but it crops the sensor (noisier on faint stars).")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            } else if camera.zoomFactor > 1.01 {
+                Text("Optical zoom — no quality loss.")
+                    .font(.system(size: 9)).foregroundStyle(.green.opacity(0.8))
+            }
+        }
+    }
+
+    // MARK: - Total-exposure picker
+
+    /// Choose the total light-integration time. Beyond ~1s it's achieved by
+    /// stacking many frames — the honest way past the single-exposure cap, and
+    /// how the sky gets genuinely brighter (√N less noise).
+    private var exposurePicker: some View {
+        VStack(spacing: 5) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(exposureSteps, id: \.self) { s in
+                        Button {
+                            totalExposure = s
+                        } label: {
+                            Text(s == 0 ? "Auto" : label(for: s))
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(totalExposure == s ? Color.white : Color.white.opacity(0.1),
+                                            in: Capsule())
+                                .foregroundStyle(totalExposure == s ? .black : .white)
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            Text(String(format: "≈ %@ total · %d frames × %.1fs",
+                        label(for: effectiveTotalSeconds), stackCount, perFrame))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+        }
+    }
+
+    private func label(for s: Double) -> String {
+        s >= 60 ? String(format: "%.0fm", s / 60) : String(format: "%.0fs", s)
+    }
+
+    private func zoomButton(_ z: CGFloat) -> some View {
+        let selected = abs(camera.zoomFactor - z) < 0.05
+        return Button {
+            camera.setZoom(z)
+        } label: {
+            Text("\(Int(z))×")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 11).padding(.vertical, 5)
+                .background(selected ? Color.white : Color.white.opacity(0.1), in: Capsule())
+                .foregroundStyle(selected ? Color.black : Color.white)
+        }
     }
 
     // MARK: - Self-timer
