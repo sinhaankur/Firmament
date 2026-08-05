@@ -44,6 +44,15 @@ final class NightCapture: NSObject, ObservableObject {
     /// instead of opening the editor.
     var onFrameForTimelapse: ((CGImage) -> Void)?
 
+    /// Optional master dark for dark-frame subtraction (removes thermal noise +
+    /// hot pixels). When calibrated + enabled, each light frame is corrected.
+    weak var darkStore: DarkFrameStore?
+    /// Whether we're currently capturing a dark-calibration frame (route it to
+    /// the dark store instead of the editor/stack).
+    var capturingDark = false
+    /// User toggle for applying subtraction to real captures.
+    var darkSubtractionEnabled = false
+
     private let photoOutput = AVCapturePhotoOutput()
     private let ciContext = CIContext()
     private weak var controller: CameraEngine?
@@ -91,6 +100,27 @@ final class NightCapture: NSObject, ObservableObject {
             return CMVideoDimensions(width: 0, height: 0)
         }
         return maxDim
+    }
+
+    private var darkFramesLeft = 0
+
+    // MARK: - Dark-frame calibration
+
+    /// Capture a master dark: several covered-lens frames averaged. The caller
+    /// should have the user cover the lens first. Uses the same exposure/ISO as a
+    /// real capture so the thermal signal matches.
+    func calibrateDark(frames: Int = 5) {
+        guard let device = controller?.videoDevice, let darkStore else { return }
+        pushToLimits(device)
+        darkStore.beginCalibration()
+        capturingDark = true
+        darkFramesLeft = frames
+        state = .capturing(progress: 0)
+        captureDarkFrame()
+    }
+
+    private func captureDarkFrame() {
+        photoOutput.capturePhoto(with: makePhotoSettings(preferRAW: false), delegate: self)
     }
 
     // MARK: - Capture entry
@@ -250,7 +280,11 @@ final class NightCapture: NSObject, ObservableObject {
     /// Average frames together. Averaging N frames drops read-noise by √N while
     /// keeping star signal — the core of astro stacking. (Alignment via feature
     /// matching lands in Phase 3; on a tripod frames are already registered.)
-    private func accumulate(_ frame: CIImage) {
+    private func accumulate(_ rawFrame: CIImage) {
+        // Dark-frame subtraction: remove thermal noise + hot pixels per light.
+        let frame = (darkSubtractionEnabled && darkStore?.isCalibrated == true)
+            ? (darkStore?.subtract(from: rawFrame) ?? rawFrame)
+            : rawFrame
         stackCount += 1
         if let acc = stackAccumulator {
             let weightNew = 1.0 / Double(stackCount)
@@ -331,6 +365,21 @@ extension NightCapture: AVCapturePhotoCaptureDelegate {
             return
         }
         Task { @MainActor in
+            // Dark-calibration frame? Route to the dark store.
+            if self.capturingDark {
+                self.darkStore?.addDarkFrame(ci)
+                self.darkFramesLeft -= 1
+                if self.darkFramesLeft <= 0 {
+                    self.capturingDark = false
+                    let iso = Double(self.controller?.videoDevice?.iso ?? 0)
+                    let exp = self.controller?.videoDevice?.exposureDuration.seconds ?? 0
+                    self.darkStore?.finishCalibration(iso: Float(iso), exposure: exp)
+                    self.state = .idle
+                } else {
+                    self.captureDarkFrame()
+                }
+                return
+            }
             // Time-lapse frame? Route to the recorder instead of the editor.
             if let sink = self.onFrameForTimelapse {
                 if let cg = self.ciContext.createCGImage(ci, from: ci.extent) {

@@ -36,6 +36,7 @@ struct RootView: View {
     @StateObject private var telescope = TelescopeEngine()
     @StateObject private var timelapse = TimelapseRecorder()
     @StateObject private var peaking = FocusPeakingController()
+    @StateObject private var darkStore = DarkFrameStore()
 
     @State private var mode: Mode = .explore
     @State private var selected: SkyObject?
@@ -113,7 +114,8 @@ struct RootView: View {
                                     inFrame: inFrameSubjects,
                                     peakingOn: $peakingOn,
                                     pureMode: $pureMode,
-                                    showGrid: $showGrid)
+                                    showGrid: $showGrid,
+                                    darkStore: darkStore)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 modeSwitcher
@@ -173,6 +175,7 @@ struct RootView: View {
         .onChange(of: camera.isConfigured) { _, ready in
             if ready {
                 night.attach(to: camera)
+                night.darkStore = darkStore
                 timelapse.configure(night: night)
                 peaking.attach(to: camera.session)
             }

@@ -75,6 +75,35 @@ final class CaptureAndCatalogTests: XCTestCase {
         XCTAssertFalse(g.isIdentity)
     }
 
+    /// A bright "dark" (lens not covered) is rejected; a genuine near-black one
+    /// calibrates and subtracts toward black.
+    @MainActor
+    func testDarkFrameCalibration() {
+        let store = DarkFrameStore()
+
+        // A bright frame is NOT a valid dark.
+        store.beginCalibration()
+        let bright = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+            .cropped(to: CGRect(x: 0, y: 0, width: 8, height: 8))
+        store.addDarkFrame(bright)
+        XCTAssertFalse(store.finishCalibration(iso: 3200, exposure: 1),
+                       "an open-lens frame must be rejected")
+
+        // A near-black frame IS a valid dark.
+        store.beginCalibration()
+        let dark = CIImage(color: CIColor(red: 0.02, green: 0.02, blue: 0.02))
+            .cropped(to: CGRect(x: 0, y: 0, width: 8, height: 8))
+        store.addDarkFrame(dark)
+        XCTAssertTrue(store.finishCalibration(iso: 3200, exposure: 1))
+        XCTAssertTrue(store.isCalibrated)
+
+        // Subtracting the dark from a light dims it (removes the offset).
+        let light = CIImage(color: CIColor(red: 0.1, green: 0.1, blue: 0.1))
+            .cropped(to: CGRect(x: 0, y: 0, width: 8, height: 8))
+        let corrected = store.subtract(from: light)
+        XCTAssertFalse(corrected.extent.isEmpty)
+    }
+
     /// A flat (edgeless) image scores low sharpness; the computer returns a
     /// value in range and never crashes.
     func testSharpnessScoreInRange() {

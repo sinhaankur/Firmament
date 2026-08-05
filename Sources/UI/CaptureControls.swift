@@ -21,6 +21,8 @@ struct CaptureControls: View {
     /// Pure Photography (hide astronomy overlays) + composition grid.
     @Binding var pureMode: Bool
     @Binding var showGrid: Bool
+    /// Dark-frame calibration store (thermal-noise removal).
+    @ObservedObject var darkStore: DarkFrameStore
 
     @State private var timerSeconds = 0        // self-timer: 0 / 3 / 10
     @State private var countdown: Int?         // live countdown display
@@ -82,6 +84,7 @@ struct CaptureControls: View {
                         if !manualMode { exposurePicker }
                     }
                     focusControls
+                    darkFrameControls
                     levelIndicator
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -439,6 +442,42 @@ struct CaptureControls: View {
             } else if camera.zoomFactor > 1.01 {
                 Text("Optical zoom — no quality loss.")
                     .font(.system(size: 9)).foregroundStyle(.green.opacity(0.8))
+            }
+        }
+    }
+
+    // MARK: - Dark-frame subtraction (thermal-noise removal)
+
+    @ViewBuilder
+    private var darkFrameControls: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("Dark-frame").font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                if darkStore.isCalibrated {
+                    Label("Ready", systemImage: "checkmark.seal.fill")
+                        .font(.system(size: 10)).foregroundStyle(.green)
+                    Toggle("", isOn: Binding(
+                        get: { night.darkSubtractionEnabled },
+                        set: { night.darkSubtractionEnabled = $0 }))
+                        .labelsHidden()
+                }
+                Button(darkStore.isCalibrated ? "Recalibrate" : "Calibrate") {
+                    night.calibrateDark()
+                }
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.cyan)
+                .disabled(night.capturingDark)
+            }
+            if night.capturingDark {
+                Text("Cover the lens completely…")
+                    .font(.system(size: 9)).foregroundStyle(.yellow)
+            } else if darkStore.isCalibrated {
+                Text("Removes thermal noise + hot pixels from stacked shots.")
+                    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.45))
+            } else {
+                Text("Cover the lens, tap Calibrate — captures a master dark.")
+                    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.45))
+                    .multilineTextAlignment(.center)
             }
         }
     }
