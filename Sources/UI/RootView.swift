@@ -49,6 +49,9 @@ struct RootView: View {
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
     @AppStorage("nightVision") private var nightVision = false
+    /// Pure Photography: hide all astronomy overlays, just the camera + controls.
+    @AppStorage("pureMode") private var pureMode = false
+    @AppStorage("showGrid") private var showGrid = false
     @State private var peakingOn = false
     private let weather = WeatherProvider()
 
@@ -67,8 +70,10 @@ struct RootView: View {
                 FocusPeakingOverlay(controller: peaking)
             }
 
-            // Celestial overlay (Explore + Spot both show it).
-            if mode != .capture || true {
+            // Celestial overlay — shown everywhere EXCEPT Pure Photography in
+            // Capture, where we want a clean, distraction-free frame.
+            let cleanShoot = mode == .capture && pureMode
+            if !cleanShoot {
                 SkyOverlayView(
                     model: model,
                     selected: $selected,
@@ -76,6 +81,11 @@ struct RootView: View {
                     horizontalFovDegrees: camera.horizontalFovDegrees
                 )
                 .ignoresSafeArea()
+            }
+
+            // Composition grid (rule-of-thirds) — for framing in Pure mode.
+            if mode == .capture && showGrid {
+                CompositionGrid()
             }
 
             // Explore reticle + compass HUD (aim-to-identify).
@@ -100,7 +110,9 @@ struct RootView: View {
                                     profile: camera.profile,
                                     advice: advisor.advice,
                                     inFrame: inFrameSubjects,
-                                    peakingOn: $peakingOn)
+                                    peakingOn: $peakingOn,
+                                    pureMode: $pureMode,
+                                    showGrid: $showGrid)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 modeSwitcher

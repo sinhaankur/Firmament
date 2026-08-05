@@ -18,6 +18,9 @@ struct CaptureControls: View {
     var inFrame: [String] = []
     /// Focus-peaking toggle (bound to the parent).
     @Binding var peakingOn: Bool
+    /// Pure Photography (hide astronomy overlays) + composition grid.
+    @Binding var pureMode: Bool
+    @Binding var showGrid: Bool
 
     @State private var timerSeconds = 0        // self-timer: 0 / 3 / 10
     @State private var countdown: Int?         // live countdown display
@@ -53,6 +56,9 @@ struct CaptureControls: View {
 
     var body: some View {
         VStack(spacing: 10) {
+            // Pure Photography vs. Sky (astronomy overlay) + grid.
+            pureBar
+
             // One quiet info line — tap to see the advisor + hardware detail.
             infoBar
 
@@ -91,6 +97,34 @@ struct CaptureControls: View {
         }
         .padding(.bottom, 8)
         .animation(.easeInOut(duration: 0.2), value: showSettings)
+    }
+
+    // MARK: - Pure Photography / Sky toggle + grid
+
+    private var pureBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 0) {
+                ForEach([("Sky", false), ("Pure", true)], id: \.0) { title, pure in
+                    Button { pureMode = pure } label: {
+                        Text(title)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 14).padding(.vertical, 6)
+                            .background(pureMode == pure ? Color.white : Color.clear, in: Capsule())
+                            .foregroundStyle(pureMode == pure ? .black : .white)
+                    }
+                }
+            }
+            .padding(3)
+            .background(.black.opacity(0.4), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.15)))
+
+            // Grid toggle.
+            Button { showGrid.toggle() } label: {
+                Image(systemName: showGrid ? "grid.circle.fill" : "grid.circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(showGrid ? .cyan : .white.opacity(0.6))
+            }
+        }
     }
 
     // MARK: - Info bar (advisor + steadiness in one quiet line)
