@@ -25,6 +25,7 @@ struct RootView: View {
     @State private var showSettings = false
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
+    @AppStorage("nightVision") private var nightVision = false
     private let weather = WeatherProvider()
 
     var body: some View {
@@ -48,6 +49,14 @@ struct RootView: View {
                 .ignoresSafeArea()
             }
 
+            // Explore reticle + compass HUD (aim-to-identify).
+            if mode == .explore {
+                ExploreHUD(model: model) { obj in selected = obj }
+                    .padding(.top, 60)
+                    .padding(.bottom, 120)
+                    .allowsHitTesting(true)
+            }
+
             VStack {
                 topBar
                 Spacer()
@@ -58,7 +67,8 @@ struct RootView: View {
                 if mode == .capture {
                     CaptureControls(night: night, motion: model.motion,
                                     profile: camera.profile,
-                                    advice: advisor.advice)
+                                    advice: advisor.advice,
+                                    inFrame: inFrameSubjects)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 modeSwitcher
@@ -83,6 +93,17 @@ struct RootView: View {
                     .zIndex(10)
             }
         }
+        // Night-vision red wash — preserves dark adaptation (every serious
+        // stargazing app has this). Multiply keeps the sky visible, killed blue/green.
+        .overlay {
+            if nightVision {
+                Color.red.opacity(0.32)
+                    .blendMode(.multiply)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: nightVision)
         .animation(.easeInOut(duration: 0.25), value: mode)
         .animation(.easeInOut(duration: 0.25), value: selected?.id)
         .animation(.easeInOut(duration: 0.35), value: hasOnboarded)
@@ -102,7 +123,8 @@ struct RootView: View {
                 .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showSettings) {
-            SettingsSheet(showConstellations: $showConstellations)
+            SettingsSheet(showConstellations: $showConstellations,
+                          nightVision: $nightVision)
         }
         .fullScreenCover(item: Binding(
             get: { night.capturedForEditing.map { EditableImage(image: $0) } },
@@ -153,6 +175,24 @@ struct RootView: View {
     private func moonIllumination(at date: Date) -> Double {
         let jd = SkyMath.julianDay(from: date)
         return SolarSystem.moonPhase(jd: jd).illumination
+    }
+
+    /// Named bright objects roughly within the camera's frame right now, so a
+    /// capture can be annotated with what it's pointing at.
+    private var inFrameSubjects: [String] {
+        let aimAz = model.motion.pointingAzimuth
+        let aimAlt = model.motion.pointingAltitude
+        let hFov = camera.horizontalFovDegrees
+        return model.objects
+            .filter { $0.altitude > 0 && ($0.kind != .star || ($0.magnitude ?? 9) < 1.6) }
+            .filter { obj in
+                var dAz = obj.azimuth - aimAz
+                while dAz > 180 { dAz -= 360 }
+                while dAz < -180 { dAz += 360 }
+                return abs(dAz) < hFov * 0.6 && abs(obj.altitude - aimAlt) < hFov * 0.6
+            }
+            .prefix(6)
+            .map(\.name)
     }
 
     // MARK: - Chrome

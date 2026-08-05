@@ -10,6 +10,11 @@ struct CaptureControls: View {
     var profile: DeviceCaptureProfile?
     /// Optional one-line advice from the capture advisor.
     var advice: String?
+    /// Bright objects currently in frame (from the sky engine), shown as chips.
+    var inFrame: [String] = []
+
+    @State private var timerSeconds = 0        // self-timer: 0 / 3 / 10
+    @State private var countdown: Int?         // live countdown display
 
     // Tripod-steady → a deep stack sized to this device's exposure ceiling;
     // hand-held → one shot. Depth comes from the detected profile.
@@ -20,6 +25,9 @@ struct CaptureControls: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            if !inFrame.isEmpty {
+                inFrameChips
+            }
             if let p = profile {
                 Text(p.summary)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -38,9 +46,14 @@ struct CaptureControls: View {
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.black.opacity(0.4), in: Capsule())
             }
+            levelIndicator
             stabilityChip
             statusLine
-            shutter
+            HStack(spacing: 22) {
+                timerButton
+                shutter
+                Color.clear.frame(width: 44, height: 44)   // balance the row
+            }
         }
         .padding(.bottom, 8)
     }
@@ -80,21 +93,99 @@ struct CaptureControls: View {
 
     private var shutter: some View {
         Button {
-            night.inFrameAnnotation = []
-            night.capture(stackFrames: stackCount)
+            triggerCapture()
         } label: {
             ZStack {
                 Circle().stroke(.white, lineWidth: 4).frame(width: 74, height: 74)
                 Circle().fill(.white).frame(width: 62, height: 62)
-                if stackCount > 1 {
+                if let c = countdown {
+                    Text("\(c)")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(.black)
+                } else if stackCount > 1 {
                     Text("\(stackCount)×")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(.black)
                 }
             }
         }
-        .disabled(isBusy)
+        .disabled(isBusy || countdown != nil)
         .opacity(isBusy ? 0.5 : 1)
+    }
+
+    /// Fire now, or run the self-timer countdown first.
+    private func triggerCapture() {
+        night.inFrameAnnotation = inFrame
+        guard timerSeconds > 0 else {
+            night.capture(stackFrames: stackCount); return
+        }
+        countdown = timerSeconds
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { t in
+            guard let c = countdown else { t.invalidate(); return }
+            if c <= 1 {
+                t.invalidate()
+                countdown = nil
+                night.capture(stackFrames: stackCount)
+            } else {
+                countdown = c - 1
+            }
+        }
+    }
+
+    // MARK: - In-frame subject chips
+
+    private var inFrameChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(inFrame.prefix(6), id: \.self) { name in
+                    Text(name)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.white.opacity(0.12), in: Capsule())
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+            }
+        }
+        .frame(maxWidth: 300)
+    }
+
+    // MARK: - Tripod level indicator
+
+    /// A small bubble level from device roll — helps square the horizon on a
+    /// tripod. Turns green when close to level.
+    private var levelIndicator: some View {
+        let roll = motion.rollDegrees
+        let level = abs(roll) < 2
+        return HStack(spacing: 8) {
+            Image(systemName: "level")
+                .font(.system(size: 12))
+            ZStack {
+                Capsule().fill(.white.opacity(0.15)).frame(width: 90, height: 4)
+                Circle()
+                    .fill(level ? Color.green : .white)
+                    .frame(width: 8, height: 8)
+                    .offset(x: max(-42, min(42, CGFloat(roll) * 2)))
+            }
+        }
+        .foregroundStyle(level ? .green : .white.opacity(0.6))
+    }
+
+    // MARK: - Self-timer
+
+    private var timerButton: some View {
+        Button {
+            timerSeconds = timerSeconds == 0 ? 3 : (timerSeconds == 3 ? 10 : 0)
+        } label: {
+            VStack(spacing: 1) {
+                Image(systemName: timerSeconds == 0 ? "timer" : "timer.circle.fill")
+                    .font(.system(size: 20))
+                Text(timerSeconds == 0 ? "Off" : "\(timerSeconds)s")
+                    .font(.system(size: 9, weight: .medium))
+            }
+            .foregroundStyle(timerSeconds == 0 ? .white.opacity(0.6) : .cyan)
+            .frame(width: 44, height: 44)
+        }
+        .disabled(isBusy)
     }
 
     private var isBusy: Bool {

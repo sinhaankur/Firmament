@@ -14,15 +14,17 @@ final class SkyViewModel: ObservableObject {
     @Published var date: Date = Date()
     @Published var usingSimulatedLocation = false
 
-    /// The ISS, tracked live from a bundled TLE via SGP4 (nil while below the
-    /// horizon or if the observer isn't known yet).
-    @Published private(set) var iss: SkyObject?
-    /// Next visible ISS pass for the observer.
-    @Published private(set) var nextIssPass: (start: Date, peakAltitude: Double, peakAzimuth: Double)?
+    /// All tracked satellites currently above the horizon, as sky labels.
+    @Published private(set) var satellites: [SkyObject] = []
+    /// The closest satellite up right now (for Spot's "look here").
+    @Published private(set) var closestSatellite: SatelliteTracker.Fix?
+    /// Soonest upcoming visible pass across the tracked satellites.
+    @Published private(set) var nextPass: SatelliteTracker.Pass?
 
     let location = LocationService()
     let motion = MotionService()
-    private let issTracker = ISSTracker()
+    private let satTracker = SatelliteTracker()
+    private var lastPassScan = Date.distantPast
 
     private var timer: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
@@ -64,32 +66,35 @@ final class SkyViewModel: ObservableObject {
         }
         let engine = NightSkyEngine(observer: observer)
         var all = engine.allObjects(at: date, aboveHorizonOnly: false)
-        recomputeISS(observer: observer)
-        if let iss { all.append(iss) }   // show the ISS as a label too
+        recomputeSatellites(observer: observer)
+        all.append(contentsOf: satellites)   // show satellites as labels too
         objects = all
     }
 
-    /// Resolve the ISS look angle for the overlay + Spot mode.
-    private func recomputeISS(observer: NightSkyEngine.Observer) {
-        guard let look = issTracker.lookAngle(
-            latitude: observer.latitude, longitude: observer.longitude, at: date
-        ) else { iss = nil; return }
+    /// Resolve all tracked satellites' look angles for the overlay + Spot mode.
+    private func recomputeSatellites(observer: NightSkyEngine.Observer) {
+        let fixes = satTracker.allFixes(
+            latitude: observer.latitude, longitude: observer.longitude, at: date)
 
-        iss = SkyObject(
-            id: "sat.iss", name: "ISS", kind: .satellite,
-            raDeg: 0, decDeg: 0,
-            altitude: look.altitude, azimuth: look.azimuth,
-            magnitude: -3.5,
-            distanceText: String(format: "%.0f km away", look.rangeKm),
-            blurb: "International Space Station — from a stored orbit."
-        )
-
-        // Refresh the next-pass scan occasionally (cheap enough at 0.2 Hz here,
-        // but only recompute when we don't have one or it has elapsed).
-        if nextIssPass == nil || (nextIssPass?.start ?? date) < date {
-            nextIssPass = issTracker.nextPass(
-                latitude: observer.latitude, longitude: observer.longitude, from: date
+        satellites = fixes.filter { $0.altitude > -3 }.map { f in
+            SkyObject(
+                id: "sat.\(f.name)", name: f.name, kind: .satellite,
+                raDeg: 0, decDeg: 0,
+                altitude: f.altitude, azimuth: f.azimuth,
+                magnitude: -3.0,
+                distanceText: String(format: "%.0f km away", f.rangeKm),
+                blurb: "\(f.name) — tracked from a stored orbit."
             )
+        }
+
+        closestSatellite = fixes.filter { $0.isUp }.min { $0.rangeKm < $1.rangeKm }
+
+        // Refresh the next-pass scan every ~60s (it's a 24h forward scan).
+        if nextPass == nil || (nextPass?.start ?? date) < date
+            || Date().timeIntervalSince(lastPassScan) > 60 {
+            lastPassScan = Date()
+            nextPass = satTracker.nextPass(
+                latitude: observer.latitude, longitude: observer.longitude, from: date)
         }
     }
 
@@ -98,5 +103,25 @@ final class SkyViewModel: ObservableObject {
         .init(azimuth: motion.pointingAzimuth,
               altitude: motion.pointingAltitude,
               roll: motion.rollDegrees)
+    }
+
+    /// The object closest to where the phone is currently pointing (within a
+    /// small angular radius), for the Explore reticle's "what am I looking at".
+    func nearestToAim(withinDegrees radius: Double = 8) -> SkyObject? {
+        let aimAz = motion.pointingAzimuth
+        let aimAlt = motion.pointingAltitude
+        var best: SkyObject?
+        var bestSep = radius
+        for obj in objects where obj.altitude > -2 {
+            var dAz = obj.azimuth - aimAz
+            while dAz > 180 { dAz -= 360 }
+            while dAz < -180 { dAz += 360 }
+            let dAlt = obj.altitude - aimAlt
+            // Cosine-correct the azimuth term so separation is honest near zenith.
+            let cosAlt = cos(aimAlt * .pi / 180)
+            let sep = (dAz * cosAlt * dAz * cosAlt + dAlt * dAlt).squareRoot()
+            if sep < bestSep { bestSep = sep; best = obj }
+        }
+        return best
     }
 }

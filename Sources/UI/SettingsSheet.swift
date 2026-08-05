@@ -7,6 +7,7 @@ import SwiftUI
 /// © Ankur Sinha.
 struct SettingsSheet: View {
     @Binding var showConstellations: Bool
+    @Binding var nightVision: Bool
     @Environment(\.dismiss) private var dismiss
 
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
@@ -16,6 +17,7 @@ struct SettingsSheet: View {
             Form {
                 Section("Sky") {
                     Toggle("Constellation lines", isOn: $showConstellations)
+                    Toggle("Night-vision (red)", isOn: $nightVision)
                 }
 
                 Section("Data") {
