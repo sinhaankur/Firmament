@@ -30,8 +30,10 @@ final class SkyViewModel: ObservableObject {
 
     let location = LocationService()
     let motion = MotionService()
-    private let satTracker = SatelliteTracker()
+    private var satTracker = SatelliteTracker()   // rebuilt when fresh TLEs load
     private var lastPassScan = Date.distantPast
+    /// How the satellite orbits were sourced, for an honest label in Spot.
+    @Published private(set) var tleUpdated: Date?
 
     private var timer: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
@@ -54,6 +56,21 @@ final class SkyViewModel: ObservableObject {
             .store(in: &cancellables)
 
         recompute()
+        refreshTLEs()
+    }
+
+    /// Fetch fresh TLEs from CelesTrak and rebuild the tracker so satellite
+    /// positions are current. Silent on failure — the bundled orbits remain.
+    func refreshTLEs() {
+        Task {
+            let fetched = await TLEService.shared.current()
+            await MainActor.run {
+                self.satTracker = SatelliteTracker(catalog: fetched.tles)
+                self.tleUpdated = fetched.updated
+                self.nextPass = nil            // force a fresh pass scan
+                self.lastPassScan = .distantPast
+            }
+        }
     }
 
     func stop() {
@@ -62,6 +79,13 @@ final class SkyViewModel: ObservableObject {
         motion.stop()
     }
 
+    private var lastSkyResolveAt = Date.distantPast
+    private var lastObserver: NightSkyEngine.Observer?
+
+    /// Resolving the whole sky (Sun/Moon/planets/stars/satellites) is hundreds of
+    /// trig ops. It's driven only by *time* and *location*, which change slowly —
+    /// so we do it at ~1.5 Hz, not the 5 Hz UI tick. The fast-moving *pointing*
+    /// is handled per-frame in the overlay Canvas and doesn't need this.
     private func recompute() {
         let observer: NightSkyEngine.Observer
         if let c = location.coordinate {
@@ -71,6 +95,16 @@ final class SkyViewModel: ObservableObject {
             observer = fallback
             usingSimulatedLocation = true
         }
+
+        // Recompute the sky only when it's been long enough OR the observer moved.
+        let movedFar = lastObserver.map {
+            abs($0.latitude - observer.latitude) > 0.02 ||
+            abs($0.longitude - observer.longitude) > 0.02
+        } ?? true
+        guard movedFar || Date().timeIntervalSince(lastSkyResolveAt) > 0.66 else { return }
+        lastSkyResolveAt = Date()
+        lastObserver = observer
+
         let engine = NightSkyEngine(observer: observer)
         var all = engine.allObjects(at: date, aboveHorizonOnly: false)
         recomputeSatellites(observer: observer)
@@ -79,12 +113,14 @@ final class SkyViewModel: ObservableObject {
         recomputeStarField(engine: engine)
     }
 
-    /// Refresh the full point-field ~every 2s (stars barely move at this scale).
+    /// Refresh the point-field ~every 2s (stars barely move at this scale). Only
+    /// keeps stars above the horizon, so the per-frame overlay Canvas iterates
+    /// roughly half as many points.
     private func recomputeStarField(engine: NightSkyEngine) {
         guard Date().timeIntervalSince(lastStarFieldAt) > 2 else { return }
         lastStarFieldAt = Date()
-        starField = engine.stars(at: date, full: true).map {
-            (alt: $0.altitude, az: $0.azimuth, mag: $0.magnitude ?? 6)
+        starField = engine.stars(at: date, full: true).compactMap {
+            $0.altitude > -2 ? (alt: $0.altitude, az: $0.azimuth, mag: $0.magnitude ?? 6) : nil
         }
     }
 

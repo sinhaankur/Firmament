@@ -35,6 +35,23 @@ final class SGP4Tests: XCTestCase {
         }
     }
 
+    /// The CelesTrak TLE parser extracts the two element lines + name, and the
+    /// parsed pair drives the propagator.
+    func testTLEParsing() {
+        let text = """
+        ISS (ZARYA)
+        1 25544U 98067A   26217.53790868  .00005167  00000+0  10064-3 0  9996
+        2 25544  51.6320  55.8612 0007287  15.5234 344.5977 15.49355388579405
+        """
+        let tle = TLEService.parseTLE(text, fallbackName: "fallback")
+        XCTAssertNotNil(tle)
+        XCTAssertEqual(tle?.name, "ISS (ZARYA)")
+        XCTAssertNotNil(SGP4(line1: tle!.line1, line2: tle!.line2))
+
+        // Garbage in → nil out (no crash).
+        XCTAssertNil(TLEService.parseTLE("not a tle", fallbackName: "x"))
+    }
+
     /// The tracker resolves a look angle for every catalog satellite.
     func testTrackerLookAngles() {
         let tracker = SatelliteTracker()

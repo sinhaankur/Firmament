@@ -11,7 +11,7 @@ struct SpotView: View {
     @ObservedObject var model: SkyViewModel
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 10) {
             if let sat = model.closestSatellite {
                 overheadCard(sat)
             } else if let pass = model.nextPass {
@@ -19,7 +19,27 @@ struct SpotView: View {
             } else {
                 searchingCard
             }
+            orbitFreshness
         }
+    }
+
+    /// Honest note on how current the orbital data is.
+    @ViewBuilder
+    private var orbitFreshness: some View {
+        if let updated = model.tleUpdated {
+            let mins = Int(Date().timeIntervalSince(updated) / 60)
+            Label(mins < 2 ? "Live orbits · just updated"
+                           : "Live orbits · updated \(freshnessText(mins))",
+                  systemImage: "dot.radiowaves.up.forward")
+                .font(.system(size: 10)).foregroundStyle(.green.opacity(0.8))
+        } else {
+            Label("Using stored orbits (offline)", systemImage: "internaldrive")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+        }
+    }
+
+    private func freshnessText(_ mins: Int) -> String {
+        mins < 60 ? "\(mins)m ago" : "\(mins / 60)h ago"
     }
 
     // MARK: - A satellite is up now

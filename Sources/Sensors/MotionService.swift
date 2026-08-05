@@ -35,10 +35,18 @@ final class MotionService: ObservableObject {
                            + d.userAcceleration.y * d.userAcceleration.y
                            + d.userAcceleration.z * d.userAcceleration.z)
             Task { @MainActor in
-                self.pointingAzimuth = az
-                self.pointingAltitude = alt
-                self.rollDegrees = roll
                 self.ingestMotion(accel)
+                // Deadband: only publish (and thus re-render the overlay) when the
+                // aim actually moved. A perfectly still phone stops churning
+                // SwiftUI at 30 Hz — big idle-scene battery + CPU win.
+                let moved = Self.angularDelta(self.pointingAzimuth, az) > 0.12
+                    || abs(self.pointingAltitude - alt) > 0.12
+                    || abs(self.rollDegrees - roll) > 0.3
+                if moved {
+                    self.pointingAzimuth = az
+                    self.pointingAltitude = alt
+                    self.rollDegrees = roll
+                }
             }
         }
     }
@@ -54,6 +62,13 @@ final class MotionService: ObservableObject {
         recentMotion = avg
         // ~0.02 g of residual is a phone sitting still; hand-held is far more.
         isSteady = motionSamples.count >= 20 && avg < 0.02
+    }
+
+    /// Smallest absolute angular difference between two azimuths (handles wrap).
+    private static func angularDelta(_ a: Double, _ b: Double) -> Double {
+        var d = abs(a - b).truncatingRemainder(dividingBy: 360)
+        if d > 180 { d = 360 - d }
+        return d
     }
 
     /// Convert device attitude into where the *back camera* points.
