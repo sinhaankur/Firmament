@@ -50,6 +50,8 @@ struct RootView: View {
     @State private var importError: String?
     /// True while a picked photo/video is being decoded (videos take a moment).
     @State private var importing = false
+    /// Which stage the import is on — shown in the HUD so it's never a mystery.
+    @State private var importStage = ""
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
     @AppStorage("nightVision") private var nightVision = false
@@ -224,7 +226,9 @@ struct RootView: View {
                     Color.black.opacity(0.4).ignoresSafeArea()
                     VStack(spacing: 10) {
                         ProgressView().tint(.white)
-                        Text("Preparing…").font(.system(size: 13)).foregroundStyle(.white)
+                        Text(importStage.isEmpty ? "Preparing…" : importStage)
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(.white)
                     }
                     .padding(24)
                     .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
@@ -250,29 +254,36 @@ struct RootView: View {
     /// Videos / time-lapses are frame-stacked into one brighter still. Photos are
     /// orientation-corrected (HEIC/JPEG carry EXIF rotation CIImage ignores).
     private func loadPickedImage(_ item: PhotosPickerItem) async {
-        await MainActor.run { importing = true }
-        defer { Task { @MainActor in importing = false } }
+        await MainActor.run { importing = true; importStage = "reading…" }
+        defer { Task { @MainActor in importing = false; importStage = "" } }
         var loaded: CIImage?
-        let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
+
+        // Detect video by ANY movie-family content type (a single .movie check
+        // misses some iPhone clips), or by a video UTType identifier.
+        let isVideo = item.supportedContentTypes.contains {
+            $0.conforms(to: .movie) || $0.conforms(to: .video)
+            || $0.conforms(to: .quickTimeMovie) || $0.conforms(to: .mpeg4Movie)
+            || $0.identifier.contains("movie") || $0.identifier.contains("video")
+        }
 
         if isVideo {
-            // Video → stack frames into one still. Load the raw bytes (reliable
-            // for .mov/.mp4/HEVC, unlike a FileRepresentation whose contentType
-            // may not match), write to a temp file, then stack. The whole thing
-            // is time-boxed inside VideoImporter so it can't hang.
-            guard let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty else {
+            await MainActor.run { importStage = "loading video…" }
+            // Prefer the file URL (streams from disk — no loading the whole clip
+            // into memory). Fall back to raw Data if the URL transfer fails.
+            var videoURL: URL?
+            if let movie = try? await item.loadTransferable(type: VideoImporter.Movie.self) {
+                videoURL = movie.url
+            } else if let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty {
+                let tmp = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString + ".mov")
+                if (try? data.write(to: tmp)) != nil { videoURL = tmp }
+            }
+            guard let url = videoURL else {
                 await MainActor.run { importError = "Couldn't read the video file." }
                 return
             }
-            let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString + ".mov")
-            do {
-                try data.write(to: tmp)
-                loaded = await VideoImporter().stackedFrame(from: tmp)
-            } catch {
-                loaded = nil
-            }
-            try? FileManager.default.removeItem(at: tmp)
+            await MainActor.run { importStage = "stacking frames…" }
+            loaded = await VideoImporter().stackedFrame(from: url)
             if loaded == nil {
                 await MainActor.run { importError = "Couldn't process that video — try a shorter clip." }
                 return
