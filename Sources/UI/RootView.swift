@@ -48,6 +48,8 @@ struct RootView: View {
     @State private var editingItem: EditableImage?
     /// Surfaced if a library item can't be loaded, so failure isn't silent.
     @State private var importError: String?
+    /// Temporary on-screen import trace, so we can see where the flow stops.
+    @State private var importDebug: String = ""
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
     @AppStorage("nightVision") private var nightVision = false
@@ -59,6 +61,20 @@ struct RootView: View {
     private let weather = WeatherProvider()
 
     var body: some View {
+        mainContent
+            // The editor is presented HERE, on the outer container — isolated
+            // from the inner ZStack's .animation modifiers and the Photos
+            // picker's sheet, so nothing can swallow its presentation. This is
+            // the reliable fix for "select media → editor doesn't open".
+            .fullScreenCover(item: $editingItem) { editable in
+                PhotoEditorView(original: editable.image, meta: editable.meta) {
+                    editingItem = nil
+                    night.capturedForEditing = nil
+                }
+            }
+    }
+
+    private var mainContent: some View {
         ZStack {
             // Live sky.
             if camera.isConfigured {
@@ -141,18 +157,6 @@ struct RootView: View {
                     .zIndex(10)
             }
 
-            // Photo editor — presented as a top-level overlay (NOT a system
-            // sheet/cover) so it can never conflict with the Photos picker's own
-            // presentation. This is what fixes "picker closes, nothing opens".
-            if let editable = editingItem {
-                PhotoEditorView(original: editable.image, meta: editable.meta) {
-                    editingItem = nil
-                    night.capturedForEditing = nil
-                }
-                .transition(.opacity)
-                .zIndex(20)
-                .ignoresSafeArea()
-            }
         }
         // Night-vision red wash — preserves dark adaptation (every serious
         // stargazing app has this). Multiply keeps the sky visible, killed blue/green.
@@ -206,7 +210,19 @@ struct RootView: View {
         // Library item chosen → load then open the editor.
         .onChange(of: libraryPick) { _, item in
             guard let item else { return }
+            importDebug = "picked…"
             Task { await loadPickedImage(item) }
+        }
+        // Temporary import trace overlay (top of screen).
+        .overlay(alignment: .top) {
+            if !importDebug.isEmpty {
+                Text(importDebug)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(.black.opacity(0.7), in: Capsule())
+                    .foregroundStyle(.cyan)
+                    .padding(.top, 60)
+            }
         }
         .alert("Couldn't open that item",
                isPresented: Binding(get: { importError != nil },
@@ -232,52 +248,59 @@ struct RootView: View {
     private func loadPickedImage(_ item: PhotosPickerItem) async {
         var loaded: CIImage?
         let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
+        await MainActor.run { importDebug = isVideo ? "loading video…" : "loading photo…" }
 
         if isVideo {
             // Video / time-lapse → stack frames into one still.
             if let movie = try? await item.loadTransferable(type: VideoImporter.Movie.self) {
                 loaded = await VideoImporter().stackedFrame(from: movie.url)
+            } else {
+                await MainActor.run { importError = "Couldn't read the video file." }
+                return
             }
         } else {
             let isRAW = item.supportedContentTypes.contains {
                 $0.conforms(to: .rawImage) || $0.identifier.contains("dng")
             }
-            if let data = try? await item.loadTransferable(type: Data.self) {
-                // RAW / ProRAW (DNG) → decode via CIRAWFilter for full editing
-                // latitude (the real reason to shoot RAW).
-                if isRAW,
-                   let raw = CIRAWFilter(imageData: data, identifierHint: nil),
-                   let out = raw.outputImage {
-                    loaded = out
-                }
-                // Otherwise a normal photo: decode with orientation baked in.
-                if loaded == nil, let ui = UIImage(data: data) {
-                    let fixed = ui.normalizedUp()
-                    if let cg = fixed.cgImage { loaded = CIImage(cgImage: cg) }
-                    else { loaded = CIImage(image: fixed) }
-                }
-                if loaded == nil {
-                    loaded = CIImage(data: data, options: [.applyOrientationProperty: true])
-                }
+            // Load the raw bytes. This is where an iCloud photo that isn't
+            // downloaded yet fails — report it clearly rather than silently.
+            let data: Data?
+            do { data = try await item.loadTransferable(type: Data.self) }
+            catch { data = nil }
+            guard let data else {
+                await MainActor.run { importError = "Couldn't load that photo (it may still be in iCloud — open it in Photos first, then retry)." }
+                return
+            }
+            if isRAW,
+               let raw = CIRAWFilter(imageData: data, identifierHint: nil),
+               let out = raw.outputImage {
+                loaded = out
+            }
+            if loaded == nil, let ui = UIImage(data: data) {
+                let fixed = ui.normalizedUp()
+                if let cg = fixed.cgImage { loaded = CIImage(cgImage: cg) }
+                else { loaded = CIImage(image: fixed) }
+            }
+            if loaded == nil {
+                loaded = CIImage(data: data, options: [.applyOrientationProperty: true])
             }
         }
 
-        // Reset the picker binding so the same item can be re-picked later, and
-        // so its sheet is fully torn down before we present the editor.
+        // Reset the picker binding so the same item can be re-picked later.
         await MainActor.run { libraryPick = nil }
 
         guard let image = loaded,
               !image.extent.isEmpty, !image.extent.isInfinite, !image.extent.isNull else {
-            await MainActor.run { importError = "That photo or video couldn't be decoded (it may still be downloading from iCloud)." }
+            await MainActor.run { importError = "That file couldn't be decoded." }
             return
         }
 
-        // Small settle so the picker sheet is gone, then show the editor overlay.
-        try? await Task.sleep(nanoseconds: 250_000_000)
+        // Let the Photos picker sheet finish dismissing, then present the editor
+        // cover (two system presentations can't animate at once).
+        try? await Task.sleep(nanoseconds: 500_000_000)
         await MainActor.run {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                editingItem = EditableImage(image: image, meta: .init())
-            }
+            importDebug = ""
+            editingItem = EditableImage(image: image, meta: .init())
         }
     }
 
