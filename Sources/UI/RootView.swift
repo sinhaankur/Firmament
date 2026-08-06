@@ -48,8 +48,6 @@ struct RootView: View {
     @State private var editingItem: EditableImage?
     /// Surfaced if a library item can't be loaded, so failure isn't silent.
     @State private var importError: String?
-    /// Temporary on-screen import trace, so we can see where the flow stops.
-    @State private var importDebug: String = ""
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
     @AppStorage("nightVision") private var nightVision = false
@@ -210,19 +208,7 @@ struct RootView: View {
         // Library item chosen → load then open the editor.
         .onChange(of: libraryPick) { _, item in
             guard let item else { return }
-            importDebug = "picked…"
             Task { await loadPickedImage(item) }
-        }
-        // Temporary import trace overlay (top of screen).
-        .overlay(alignment: .top) {
-            if !importDebug.isEmpty {
-                Text(importDebug)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(.black.opacity(0.7), in: Capsule())
-                    .foregroundStyle(.cyan)
-                    .padding(.top, 60)
-            }
         }
         .alert("Couldn't open that item",
                isPresented: Binding(get: { importError != nil },
@@ -248,7 +234,6 @@ struct RootView: View {
     private func loadPickedImage(_ item: PhotosPickerItem) async {
         var loaded: CIImage?
         let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
-        await MainActor.run { importDebug = isVideo ? "loading video…" : "loading photo…" }
 
         if isVideo {
             // Video / time-lapse → stack frames into one still.
@@ -299,7 +284,6 @@ struct RootView: View {
         // cover (two system presentations can't animate at once).
         try? await Task.sleep(nanoseconds: 500_000_000)
         await MainActor.run {
-            importDebug = ""
             editingItem = EditableImage(image: image, meta: .init())
         }
     }
