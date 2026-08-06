@@ -41,6 +41,23 @@ final class VideoImporterTests: XCTestCase {
         XCTAssertEqual(VideoFilter.mono.base.saturation, 0)
     }
 
+    /// A text overlay renders to a frame-sized CIImage; empty text renders nil.
+    func testTextOverlayRenders() {
+        let extent = CGRect(x: 0, y: 0, width: 640, height: 360)
+        var o = TextOverlay()
+        XCTAssertNil(VideoAdjust.renderText(o, in: extent), "empty caption → nil")
+        o.text = "Milky Way over the ridge"
+        let img = VideoAdjust.renderText(o, in: extent)
+        XCTAssertNotNil(img)
+        if let img {
+            XCTAssertEqual(img.extent.width, 640, accuracy: 1)
+            XCTAssertEqual(img.extent.height, 360, accuracy: 1)
+        }
+        // A caption makes the adjustment non-neutral (so it triggers export).
+        var adj = VideoAdjust(); adj.overlay = o
+        XCTAssertFalse(adj.isNeutral)
+    }
+
     /// A bogus URL returns nil quickly (within the timeout) — never hangs.
     func testBadVideoReturnsNilFast() async {
         let bogus = FileManager.default.temporaryDirectory

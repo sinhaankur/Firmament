@@ -1,5 +1,6 @@
 //  © 2026 Ankur Sinha. All rights reserved. Part of Firmament (MIT).
 import SwiftUI
+import UIKit
 import AVFoundation
 import AVKit
 import CoreImage
@@ -35,8 +36,25 @@ struct VideoEditorView: View {
             VStack(spacing: 0) {
                 header
                 if let player {
-                    VideoPlayer(player: player)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    GeometryReader { geo in
+                        ZStack {
+                            VideoPlayer(player: player)
+                            // Live draggable caption preview.
+                            if !adjust.overlay.isEmpty {
+                                Text(adjust.overlay.text)
+                                    .font(.system(size: max(10, geo.size.height * adjust.overlay.sizeFraction), weight: .semibold))
+                                    .foregroundStyle(overlayColor)
+                                    .shadow(color: .black.opacity(0.8), radius: 3, y: 1)
+                                    .position(x: adjust.overlay.xNorm * geo.size.width,
+                                              y: adjust.overlay.yNorm * geo.size.height)
+                                    .gesture(DragGesture().onChanged { g in
+                                        adjust.overlay.xNorm = min(1, max(0, g.location.x / geo.size.width))
+                                        adjust.overlay.yNorm = min(1, max(0, g.location.y / geo.size.height))
+                                    })
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     Spacer(); ProgressView().tint(.white); Spacer()
                 }
@@ -74,6 +92,7 @@ struct VideoEditorView: View {
             }
             trimTimeline
             filterRow
+            textPanel
             // Adjust sliders.
             adjustSlider("Exposure", $adjust.exposure, -2, 2)
             adjustSlider("Contrast", $adjust.contrast, 0.5, 1.5)
@@ -174,10 +193,52 @@ struct VideoEditorView: View {
         }
     }
 
-    /// Apply a filter as the new base (preserving nothing — a fresh look).
+    /// Apply a filter as the new base — but keep any text overlay the user added.
     private func applyFilter(_ f: VideoFilter) {
         activeFilter = f
+        let keptOverlay = adjust.overlay
         adjust = f.base
+        adjust.overlay = keptOverlay
+    }
+
+    // MARK: - Text / caption panel
+
+    private var overlayColor: Color {
+        let i = adjust.overlay.colorIndex
+        let c = i < TextOverlay.palette.count ? TextOverlay.palette[i].ci : TextOverlay.palette[0].ci
+        return Color(red: c.red, green: c.green, blue: c.blue)
+    }
+
+    private var textPanel: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "textformat").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                TextField("Add a caption…", text: $adjust.overlay.text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13)).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(.white.opacity(0.08), in: Capsule())
+            }
+            if !adjust.overlay.isEmpty {
+                HStack(spacing: 10) {
+                    // Color chips.
+                    ForEach(Array(TextOverlay.palette.enumerated()), id: \.offset) { i, entry in
+                        Button { adjust.overlay.colorIndex = i } label: {
+                            Circle()
+                                .fill(Color(red: entry.ci.red, green: entry.ci.green, blue: entry.ci.blue))
+                                .frame(width: 20, height: 20)
+                                .overlay(Circle().stroke(.white, lineWidth: adjust.overlay.colorIndex == i ? 2 : 0))
+                                .overlay(Circle().stroke(.white.opacity(0.3), lineWidth: 0.5))
+                        }
+                    }
+                    Divider().frame(height: 16).overlay(.white.opacity(0.2))
+                    Image(systemName: "textformat.size").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
+                    Slider(value: $adjust.overlay.sizeFraction, in: 0.03...0.15).tint(.white)
+                }
+                Text("Drag the caption on the video to place it.")
+                    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.4))
+            }
+        }
     }
 
     // MARK: - Setup + preview
@@ -325,6 +386,24 @@ enum VideoFilter: String, CaseIterable, Identifiable {
     }
 }
 
+/// A text overlay burned into the video. Position is normalized (0…1) from the
+/// top-left of the frame; size is a fraction of the frame height.
+struct TextOverlay: Equatable {
+    var text: String = ""
+    var xNorm: Double = 0.5
+    var yNorm: Double = 0.85
+    var sizeFraction: Double = 0.06   // ~6% of frame height
+    var colorIndex: Int = 0           // into TextOverlay.palette
+
+    static let palette: [(name: String, ci: CIColor)] = [
+        ("White", CIColor(red: 1, green: 1, blue: 1)),
+        ("Yellow", CIColor(red: 1, green: 0.85, blue: 0.2)),
+        ("Cyan", CIColor(red: 0.4, green: 0.85, blue: 1)),
+        ("Black", CIColor(red: 0, green: 0, blue: 0)),
+    ]
+    var isEmpty: Bool { text.trimmingCharacters(in: .whitespaces).isEmpty }
+}
+
 /// The adjustable parameters for the video editor.
 struct VideoAdjust: Equatable {
     var exposure: Double = 0
@@ -334,10 +413,11 @@ struct VideoAdjust: Equatable {
     var dehaze: Double = 0      // light-pollution / glow removal
     var vibrance: Double = 0
     var warmth: Double = 0      // −1 cool … +1 warm
+    var overlay = TextOverlay()
 
     var isNeutral: Bool {
         exposure == 0 && brightness == 0 && contrast == 1 && saturation == 1
-        && dehaze == 0 && vibrance == 0 && warmth == 0
+        && dehaze == 0 && vibrance == 0 && warmth == 0 && overlay.isEmpty
     }
 
     /// Build an AVVideoComposition that applies these adjustments per frame.
@@ -377,7 +457,54 @@ struct VideoAdjust: Equatable {
                 let f = CIFilter.vibrance(); f.inputImage = image
                 f.amount = Float(adjust.vibrance); image = f.outputImage ?? image
             }
+            // Text overlay, composited over the graded frame.
+            if !adjust.overlay.isEmpty {
+                if let text = Self.renderText(adjust.overlay, in: request.sourceImage.extent) {
+                    image = text.composited(over: image)
+                }
+            }
             request.finish(with: image.cropped(to: request.sourceImage.extent), context: nil)
         }
+    }
+
+    /// Render the caption to a transparent CIImage sized to the frame, with a
+    /// soft shadow so it reads over the sky.
+    static func renderText(_ overlay: TextOverlay, in extent: CGRect) -> CIImage? {
+        guard !overlay.isEmpty else { return nil }
+        let w = extent.width, h = extent.height
+        guard w > 0, h > 0 else { return nil }
+        let fontSize = max(8, h * CGFloat(overlay.sizeFraction))
+
+        let color = overlay.colorIndex < TextOverlay.palette.count
+            ? TextOverlay.palette[overlay.colorIndex].ci : TextOverlay.palette[0].ci
+        let uiColor = UIColor(red: color.red, green: color.green, blue: color.blue, alpha: 1)
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .foregroundColor: uiColor,
+            .shadow: {
+                let s = NSShadow(); s.shadowColor = UIColor.black.withAlphaComponent(0.8)
+                s.shadowBlurRadius = fontSize * 0.15; s.shadowOffset = .init(width: 0, height: 1); return s
+            }(),
+        ]
+        let string = NSAttributedString(string: overlay.text, attributes: attrs)
+        let textSize = string.size()
+
+        // Render at scale 1 so the CIImage extent matches the video frame's
+        // pixel extent exactly (no retina 3× mismatch when compositing).
+        let fmt = UIGraphicsImageRendererFormat.default()
+        fmt.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: fmt)
+        let img = renderer.image { _ in
+            // Draw centered at the normalized position (UIKit y is top-down).
+            let x = CGFloat(overlay.xNorm) * w - textSize.width / 2
+            let y = CGFloat(overlay.yNorm) * h - textSize.height / 2
+            string.draw(at: CGPoint(x: x, y: y))
+        }
+        guard let cg = img.cgImage else { return nil }
+        // CoreImage's y is bottom-up; flip so text lands where the user placed it.
+        return CIImage(cgImage: cg)
+            .transformed(by: CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -h))
+            .transformed(by: CGAffineTransform(translationX: extent.origin.x, y: extent.origin.y))
     }
 }
