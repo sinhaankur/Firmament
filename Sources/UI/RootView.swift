@@ -255,6 +255,10 @@ struct RootView: View {
                 editingItem = EditableImage(image: ci, meta: night.lastCaptureMeta)
             }
         }
+        // Surface a capture failure instead of it being silent.
+        .onChange(of: captureFailureText) { _, msg in
+            if let msg { Theme.notify(.error); importError = "Capture failed: \(msg)" }
+        }
         // Library item chosen → load then open the editor.
         .onChange(of: libraryPick) { _, item in
             guard let item else { return }
@@ -378,6 +382,12 @@ struct RootView: View {
         await MainActor.run {
             editingItem = EditableImage(image: image, meta: .init())
         }
+    }
+
+    /// The message if a capture failed, else nil — drives the failure alert.
+    private var captureFailureText: String? {
+        if case .failed(let m) = night.state { return m }
+        return nil
     }
 
     /// Start the sensors + camera. Called after onboarding, so the system

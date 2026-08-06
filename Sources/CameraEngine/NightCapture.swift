@@ -222,8 +222,11 @@ final class NightCapture: NSObject, ObservableObject {
     // MARK: - Single best-effort frame (hand-held or night-mode assist)
 
     private func captureSingle() {
-        // A single hero frame: use the best possible negative (ProRAW).
-        photoOutput.capturePhoto(with: makePhotoSettings(preferRAW: true), delegate: self)
+        // A single frame as a processed (HEVC) photo. RAW/ProRAW is disabled here
+        // on purpose: a RAW capture doesn't deliver reliably through
+        // `fileDataRepresentation()` / this delegate, which was silently dropping
+        // the shot (no editor, no save). Processed frames always come through.
+        photoOutput.capturePhoto(with: makePhotoSettings(preferRAW: false), delegate: self)
     }
 
     /// Build capture settings.
@@ -253,8 +256,13 @@ final class NightCapture: NSObject, ObservableObject {
         settings.photoQualityPrioritization = .quality
 
         // Capture at the sensor's maximum resolution (48 MP on Pro sensors).
+        // Only when the output reports a valid size — an out-of-range value
+        // makes `capturePhoto` throw and the shot never lands.
         if #available(iOS 16.0, *) {
-            settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
+            let maxDim = photoOutput.maxPhotoDimensions
+            if maxDim.width > 0, maxDim.height > 0 {
+                settings.maxPhotoDimensions = maxDim
+            }
         }
 
         return settings
@@ -376,16 +384,15 @@ extension NightCapture: AVCapturePhotoCaptureDelegate {
             Task { @MainActor in self.state = .failed(error.localizedDescription) }
             return
         }
-        guard let data = photo.fileDataRepresentation() else {
+        // Prefer the encoded data; fall back to the pixel/CGImage if a quirk
+        // leaves fileDataRepresentation nil — so a shot never vanishes.
+        let ciFromData = photo.fileDataRepresentation().flatMap { CIImage(data: $0) }
+        let ciFromCG = photo.cgImageRepresentation().map { CIImage(cgImage: $0) }
+        guard let ci0 = ciFromData ?? ciFromCG else {
             Task { @MainActor in self.state = .failed("No image data") }
             return
         }
-        // CoreImage decodes both processed frames and RAW/DNG (ProRAW) — the
-        // right path when the negative is a RAW file UIImage can't render.
-        guard let ci = CIImage(data: data) else {
-            Task { @MainActor in self.state = .failed("Could not decode frame") }
-            return
-        }
+        let ci: CIImage = ci0
         Task { @MainActor in
             // Dark-calibration frame? Route to the dark store.
             if self.capturingDark {
