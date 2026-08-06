@@ -41,26 +41,42 @@ struct VideoImporter {
     ///   • a hard **overall timeout** — if the video is huge or still in iCloud,
     ///     we return whatever we have rather than spinning forever.
     func stackedFrame(from url: URL, maxFrames: Int = 8) async -> CIImage? {
-        await withTimeout(seconds: 12) { [self] in
+        // Guarantee a result first: one frame beats an infinite spinner, and
+        // time-lapses can be long/oddly-formatted. If that works, try to improve
+        // it by stacking a few more (capped); otherwise keep the single frame.
+        guard let single = await withTimeout(seconds: 8, { [self] in await firstFrame(url: url) }) else {
+            return nil   // truly can't decode this clip
+        }
+        let stacked = await withTimeout(seconds: 8) { [self] in
             await stack(url: url, maxFrames: maxFrames)
         }
+        return stacked ?? single
+    }
+
+    /// Decode the single most reliable frame — a bit into the clip, downsampled.
+    private func firstFrame(url: URL) async -> CIImage? {
+        let asset = AVURLAsset(url: url)
+        let g = makeGenerator(asset)
+        let total = (try? await asset.load(.duration)).map { CMTimeGetSeconds($0) } ?? 0
+        let t = total > 0 ? min(total * 0.5, 1.0) : 0.1
+        return (try? await frame(g, at: CMTime(seconds: t, preferredTimescale: 600)))
+            .map { CIImage(cgImage: $0) }
+    }
+
+    private func makeGenerator(_ asset: AVAsset) -> AVAssetImageGenerator {
+        let g = AVAssetImageGenerator(asset: asset)
+        g.appliesPreferredTrackTransform = true                 // correct orientation
+        g.requestedTimeToleranceBefore = CMTime(seconds: 1.0, preferredTimescale: 600)
+        g.requestedTimeToleranceAfter = CMTime(seconds: 1.0, preferredTimescale: 600)
+        g.maximumSize = CGSize(width: 2000, height: 2000)       // downsample for speed
+        return g
     }
 
     private func stack(url: URL, maxFrames: Int) async -> CIImage? {
         let asset = AVURLAsset(url: url)
         let total = (try? await asset.load(.duration)).map { CMTimeGetSeconds($0) } ?? 0
-
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true          // correct orientation
-        generator.requestedTimeToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600)
-        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
-        generator.maximumSize = CGSize(width: 2400, height: 2400) // downsample for speed
-
-        guard total > 0 else {
-            // No duration (odd file) — just grab one frame near the start.
-            return (try? await frame(generator, at: CMTime(seconds: 0.1, preferredTimescale: 600)))
-                .map { CIImage(cgImage: $0) }
-        }
+        guard total > 0 else { return await firstFrame(url: url) }
+        let generator = makeGenerator(asset)
 
         let count = min(maxFrames, max(1, Int(total)))
         var accumulator: CIImage?
