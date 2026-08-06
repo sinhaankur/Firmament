@@ -13,6 +13,12 @@ private struct EditableImage: Identifiable {
     let meta: AutoDevelop.CaptureMeta
 }
 
+/// Identifiable wrapper for a video routed to the video editor.
+private struct EditableVideo: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 extension UIImage {
     /// Return a copy with EXIF orientation baked into the pixels (orientation
     /// = .up), so downstream CIImage/CGImage rendering isn't rotated/mirrored.
@@ -47,6 +53,8 @@ struct RootView: View {
     @State private var libraryPick: PhotosPickerItem?
     /// The image currently open in the editor (from capture OR import).
     @State private var editingItem: EditableImage?
+    /// A video open in the video editor.
+    @State private var editingVideo: EditableVideo?
     /// Surfaced if a library item can't be loaded, so failure isn't silent.
     @State private var importError: String?
     /// True while a picked photo/video is being decoded (videos take a moment).
@@ -74,6 +82,10 @@ struct RootView: View {
                     editingItem = nil
                     night.capturedForEditing = nil
                 }
+            }
+            // Videos → the trim + adjust + export video editor.
+            .fullScreenCover(item: $editingVideo) { editable in
+                VideoEditorView(url: editable.url) { editingVideo = nil }
             }
     }
 
@@ -284,12 +296,13 @@ struct RootView: View {
                 await MainActor.run { importError = "Couldn't read the video file." }
                 return
             }
-            await MainActor.run { importStage = "stacking frames…" }
-            loaded = await VideoImporter().stackedFrame(from: url)
-            if loaded == nil {
-                await MainActor.run { importError = "Couldn't process that video — try a shorter clip." }
-                return
+            // Route videos to the VIDEO editor (trim + adjust + export). Photos
+            // go to the photo editor below.
+            await MainActor.run {
+                libraryPick = nil
+                editingVideo = EditableVideo(url: url)
             }
+            return
         } else {
             let isRAW = item.supportedContentTypes.contains {
                 $0.conforms(to: .rawImage) || $0.identifier.contains("dng")
