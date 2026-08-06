@@ -256,11 +256,25 @@ struct RootView: View {
         let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
 
         if isVideo {
-            // Video / time-lapse → stack frames into one still.
-            if let movie = try? await item.loadTransferable(type: VideoImporter.Movie.self) {
-                loaded = await VideoImporter().stackedFrame(from: movie.url)
-            } else {
+            // Video → stack frames into one still. Load the raw bytes (reliable
+            // for .mov/.mp4/HEVC, unlike a FileRepresentation whose contentType
+            // may not match), write to a temp file, then stack. The whole thing
+            // is time-boxed inside VideoImporter so it can't hang.
+            guard let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty else {
                 await MainActor.run { importError = "Couldn't read the video file." }
+                return
+            }
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString + ".mov")
+            do {
+                try data.write(to: tmp)
+                loaded = await VideoImporter().stackedFrame(from: tmp)
+            } catch {
+                loaded = nil
+            }
+            try? FileManager.default.removeItem(at: tmp)
+            if loaded == nil {
+                await MainActor.run { importError = "Couldn't process that video — try a shorter clip." }
                 return
             }
         } else {
