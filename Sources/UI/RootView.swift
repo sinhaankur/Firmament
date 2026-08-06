@@ -48,6 +48,8 @@ struct RootView: View {
     @State private var editingItem: EditableImage?
     /// Surfaced if a library item can't be loaded, so failure isn't silent.
     @State private var importError: String?
+    /// True while a picked photo/video is being decoded (videos take a moment).
+    @State private var importing = false
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("showConstellations") private var showConstellations = true
     @AppStorage("nightVision") private var nightVision = false
@@ -215,6 +217,22 @@ struct RootView: View {
                                     set: { if !$0 { importError = nil } })) {
             Button("OK", role: .cancel) { importError = nil }
         } message: { Text(importError ?? "") }
+        // Importing HUD — videos take a moment to stack, so show it's working.
+        .overlay {
+            if importing {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 10) {
+                        ProgressView().tint(.white)
+                        Text("Preparing…").font(.system(size: 13)).foregroundStyle(.white)
+                    }
+                    .padding(24)
+                    .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: importing)
         // Pause sensors + camera when backgrounded (battery), resume on return.
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -232,6 +250,8 @@ struct RootView: View {
     /// Videos / time-lapses are frame-stacked into one brighter still. Photos are
     /// orientation-corrected (HEIC/JPEG carry EXIF rotation CIImage ignores).
     private func loadPickedImage(_ item: PhotosPickerItem) async {
+        await MainActor.run { importing = true }
+        defer { Task { @MainActor in importing = false } }
         var loaded: CIImage?
         let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
 
