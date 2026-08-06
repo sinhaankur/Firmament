@@ -175,7 +175,7 @@ struct VideoEditorView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(VideoFilter.allCases) { f in
-                    Button { applyFilter(f) } label: {
+                    Button { Theme.tap(); applyFilter(f) } label: {
                         VStack(spacing: 3) {
                             Image(systemName: f.icon).font(.system(size: 15))
                             Text(f.rawValue).font(.system(size: 9, weight: .medium)).lineLimit(1)
@@ -184,7 +184,7 @@ struct VideoEditorView: View {
                         .background(activeFilter == f ? Color.white.opacity(0.2) : Color.white.opacity(0.06),
                                     in: RoundedRectangle(cornerRadius: 10))
                         .overlay(RoundedRectangle(cornerRadius: 10)
-                            .stroke(activeFilter == f ? (f == .nightRecover ? .yellow : .cyan) : .clear, lineWidth: 1.5))
+                            .stroke(activeFilter == f ? (f == .nightRecover ? .yellow : Theme.accent) : .clear, lineWidth: 1.5))
                         .foregroundStyle(f == .nightRecover ? .yellow : .white)
                     }
                 }
@@ -328,6 +328,7 @@ struct VideoEditorView: View {
             let ok = await saveVideo(out)
             await MainActor.run {
                 exporting = false
+                Theme.notify(ok ? .success : .error)
                 status = ok ? "Saved to Photos" : "Save failed"
             }
         } else {

@@ -134,7 +134,7 @@ struct PhotoEditorView: View {
                 } label: {
                     Image(systemName: "square.split.2x1")
                         .font(.system(size: 17))
-                        .foregroundStyle(splitCompare ? .cyan : .white.opacity(0.7))
+                        .foregroundStyle(splitCompare ? Theme.accent : .white.opacity(0.7))
                 }
                 .accessibilityLabel("Split before and after")
             }
@@ -216,7 +216,7 @@ struct PhotoEditorView: View {
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .padding(.horizontal, 8).padding(.vertical, 3)
                                 .background(.black.opacity(0.6), in: Capsule())
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Theme.accent)
                         }
                     }
                 }
@@ -262,7 +262,7 @@ struct PhotoEditorView: View {
     private var compareButton: some View {
         Image(systemName: "rectangle.2.swap")
             .font(.system(size: 18))
-            .foregroundStyle(showingOriginal ? .cyan : .white.opacity(0.7))
+            .foregroundStyle(showingOriginal ? Theme.accent : .white.opacity(0.7))
             .frame(width: 44, height: 34)
             .contentShape(Rectangle())
             .gesture(
@@ -297,6 +297,7 @@ struct PhotoEditorView: View {
             // AI Enhance + Crop row.
             HStack(spacing: 8) {
                 Button {
+                    Theme.tap(.medium)
                     aiEnhance()
                 } label: {
                     HStack(spacing: 6) {
@@ -322,7 +323,7 @@ struct PhotoEditorView: View {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 11)
-                        .background(showCrop || !adj.geometry.isIdentity ? Color.cyan.opacity(0.85) : Color.white.opacity(0.12),
+                        .background(showCrop || !adj.geometry.isIdentity ? Theme.accent.opacity(0.85) : Color.white.opacity(0.12),
                                     in: RoundedRectangle(cornerRadius: 12))
                         .foregroundStyle(showCrop || !adj.geometry.isIdentity ? .black : .white)
                 }
@@ -335,7 +336,8 @@ struct PhotoEditorView: View {
                 HStack(spacing: 8) {
                     ForEach(Tool.allCases, id: \.self) { t in
                         Button {
-                            activeTool = t
+                            Theme.tap()
+                            withAnimation(Theme.ease) { activeTool = t }
                         } label: {
                             Text(t.rawValue)
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -398,7 +400,7 @@ struct PhotoEditorView: View {
                     Text(String(format: "%+.1f°", adj.geometry.straightenDegrees))
                         .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.7))
                 }
-                Slider(value: $adj.geometry.straightenDegrees, in: -15...15).tint(.cyan)
+                Slider(value: $adj.geometry.straightenDegrees, in: -15...15).tint(Theme.accent)
             }
 
             Button("Reset crop") {
@@ -496,6 +498,7 @@ struct PhotoEditorView: View {
         let ok = await PhotoLibrary.save(image)
         await MainActor.run {
             saving = false
+            Theme.notify(ok ? .success : .error)
             withAnimation { savedOK = ok }
         }
     }
