@@ -32,13 +32,13 @@ struct ExploreHUD: View {
         let locked = target != nil
         return ZStack {
             Circle()
-                .stroke((locked ? Color.cyan : .white).opacity(locked ? 0.9 : 0.35),
+                .stroke((locked ? Theme.accent : .white).opacity(locked ? 0.9 : 0.35),
                         lineWidth: locked ? 2 : 1)
                 .frame(width: 54, height: 54)
             // Tick marks.
             ForEach(0..<4) { i in
                 Rectangle()
-                    .fill((locked ? Color.cyan : .white).opacity(0.6))
+                    .fill((locked ? Theme.accent : .white).opacity(0.6))
                     .frame(width: 1.5, height: 8)
                     .offset(y: -33)
                     .rotationEffect(.degrees(Double(i) * 90))
@@ -66,11 +66,10 @@ struct ExploreHUD: View {
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.6))
                 Text("Tap for details")
-                    .font(.system(size: 9)).foregroundStyle(.cyan)
+                    .font(.system(size: 9)).foregroundStyle(Theme.accent)
             }
             .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.cyan.opacity(0.3)))
+            .panel(radius: Theme.Radius.chip)
         }
         .buttonStyle(.plain)
         .padding(.bottom, 8)

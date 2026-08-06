@@ -51,10 +51,10 @@ struct SpotView: View {
 
         return VStack(spacing: 12) {
             HStack(spacing: 6) {
-                Circle().fill(aligned ? .green : .cyan).frame(width: 7, height: 7)
+                Circle().fill(aligned ? Theme.good : Theme.accent).frame(width: 7, height: 7)
                 Text(aligned ? "You're on it — \(sat.name)" : "\(sat.name) is up now")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(aligned ? .green : .white)
+                    .foregroundStyle(aligned ? Theme.good : .white)
             }
 
             // Big compass-true guiding arrow: 0° = straight ahead (where you aim).
@@ -62,7 +62,7 @@ struct SpotView: View {
                 Circle().stroke(.white.opacity(0.12), lineWidth: 1).frame(width: 96, height: 96)
                 Image(systemName: "location.north.fill")
                     .font(.system(size: 40))
-                    .foregroundStyle(aligned ? .green : .cyan)
+                    .foregroundStyle(aligned ? Theme.good : Theme.accent)
                     .rotationEffect(.degrees(dAz))
                     .animation(.easeOut(duration: 0.15), value: dAz)
             }
@@ -70,7 +70,7 @@ struct SpotView: View {
             // Plain-language instruction.
             Text(instruction(dAz: dAz, dAlt: dAlt, aligned: aligned))
                 .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundStyle(aligned ? .green : .white.opacity(0.9))
+                .foregroundStyle(aligned ? Theme.good : .white.opacity(0.9))
                 .multilineTextAlignment(.center)
 
             Text(String(format: "Look %@ · %.0f° up · %.0f km away",
@@ -80,8 +80,7 @@ struct SpotView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity)
-        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke((aligned ? Color.green : .cyan).opacity(0.35)))
+        .panel()
     }
 
     /// Turn-by-turn text from the angular offsets.
@@ -106,7 +105,7 @@ struct SpotView: View {
         VStack(spacing: 8) {
             Text("Next visible pass")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(Theme.accent)
             Text(pass.name)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.8))
@@ -123,13 +122,12 @@ struct SpotView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity)
-        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.cyan.opacity(0.3)))
+        .panel()
     }
 
     private var searchingCard: some View {
         VStack(spacing: 8) {
-            ProgressView().tint(.cyan)
+            ProgressView().tint(Theme.accent)
             Text("Scanning for satellites…")
                 .font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
             Text("None visible in the next 24 h from here.")
@@ -138,7 +136,7 @@ struct SpotView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity)
-        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 20))
+        .panel()
     }
 
     // MARK: - Helpers

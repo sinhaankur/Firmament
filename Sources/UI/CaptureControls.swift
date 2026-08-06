@@ -416,6 +416,7 @@ struct CaptureControls: View {
 
     /// Fire now, or run the self-timer countdown first.
     private func triggerCapture() {
+        Theme.tap(.medium)   // satisfying shutter feel
         night.inFrameAnnotation = inFrame
         guard timerSeconds > 0 else {
             night.capture(stackFrames: stackCount); return

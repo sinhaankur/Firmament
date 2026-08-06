@@ -251,6 +251,7 @@ struct RootView: View {
         // Capture finished → open the editor.
         .onChange(of: night.captureSerial) { _, _ in
             if let ci = night.capturedForEditing {
+                Theme.notify(.success)   // capture landed
                 editingItem = EditableImage(image: ci, meta: night.lastCaptureMeta)
             }
         }
@@ -440,47 +441,37 @@ struct RootView: View {
     // MARK: - Chrome
 
     private var topBar: some View {
-        HStack {
+        HStack(spacing: Theme.Space.sm) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Firmament").font(.system(size: 15, weight: .semibold, design: .rounded))
                 if model.usingSimulatedLocation {
                     Label("Locating…", systemImage: "location.slash")
-                        .font(.system(size: 10)).foregroundStyle(.orange)
+                        .font(.system(size: 10)).foregroundStyle(Theme.warning)
                 } else if !model.location.headingIsReliable {
-                    Label("Calibrate compass — move in a figure 8",
-                          systemImage: "safari")
-                        .font(.system(size: 10)).foregroundStyle(.yellow)
+                    Label("Calibrate compass — move in a figure 8", systemImage: "safari")
+                        .font(.system(size: 10)).foregroundStyle(Theme.warning)
                 }
             }
             Spacer()
-            Button {
-                showTelescope = true
-            } label: {
+            Button { showTelescope = true } label: {
                 Image(systemName: telescope.isConnected ? "scope" : "antenna.radiowaves.left.and.right")
                     .font(.system(size: 14))
-                    .foregroundStyle(telescope.isConnected ? .green : .white.opacity(0.7))
-                    .padding(8)
-                    .background(.black.opacity(0.35), in: Circle())
+                    .foregroundStyle(telescope.isConnected ? Theme.good : .white.opacity(0.7))
+                    .iconButton()
             }
             .accessibilityLabel("Telescope")
             // Open an existing photo, video, or timelapse to auto-develop + edit.
             PhotosPicker(selection: $libraryPick,
                          matching: .any(of: [.images, .videos])) {   // .images includes RAW/DNG
                 Image(systemName: "photo.on.rectangle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .padding(8)
-                    .background(.black.opacity(0.35), in: Circle())
+                    .font(.system(size: 14)).foregroundStyle(.white.opacity(0.7))
+                    .iconButton()
             }
             .accessibilityLabel("Open a photo or video to edit")
-            Button {
-                showSettings = true
-            } label: {
+            Button { showSettings = true } label: {
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .padding(8)
-                    .background(.black.opacity(0.35), in: Circle())
+                    .font(.system(size: 14)).foregroundStyle(.white.opacity(0.7))
+                    .iconButton()
             }
             .accessibilityLabel("Settings")
             Text(model.date, style: .time)
@@ -498,13 +489,14 @@ struct RootView: View {
         }
         .padding(4)
         .background(.black.opacity(0.4), in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.15)))
+        .overlay(Capsule().stroke(Theme.hairline))
     }
 
     private func modeButton(_ m: Mode) -> some View {
         let isActive = mode == m
         return Button {
-            mode = m
+            Theme.tap()
+            withAnimation(Theme.ease) { mode = m }
             if m != .explore { selected = nil }
         } label: {
             Text(m.rawValue)
