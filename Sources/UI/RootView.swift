@@ -19,6 +19,19 @@ private struct EditableVideo: Identifiable {
     let url: URL
 }
 
+/// A single editor presentation target so ONE fullScreenCover drives both the
+/// photo and video editors (two stacked covers don't both work in SwiftUI).
+private enum EditorTarget: Identifiable {
+    case photo(EditableImage)
+    case video(EditableVideo)
+    var id: UUID {
+        switch self {
+        case .photo(let i): return i.id
+        case .video(let v): return v.id
+        }
+    }
+}
+
 extension UIImage {
     /// Return a copy with EXIF orientation baked into the pixels (orientation
     /// = .up), so downstream CIImage/CGImage rendering isn't rotated/mirrored.
@@ -77,16 +90,34 @@ struct RootView: View {
             // from the inner ZStack's .animation modifiers and the Photos
             // picker's sheet, so nothing can swallow its presentation. This is
             // the reliable fix for "select media → editor doesn't open".
-            .fullScreenCover(item: $editingItem) { editable in
-                PhotoEditorView(original: editable.image, meta: editable.meta) {
-                    editingItem = nil
-                    night.capturedForEditing = nil
+            // ONE cover for both editors. Two stacked fullScreenCovers don't both
+            // work in SwiftUI — the earlier one gets swallowed (which broke photo
+            // capture: no editor, no save). A single item-driven cover fixes it.
+            .fullScreenCover(item: editorTarget) { target in
+                switch target {
+                case .photo(let editable):
+                    PhotoEditorView(original: editable.image, meta: editable.meta) {
+                        editingItem = nil
+                        night.capturedForEditing = nil
+                    }
+                case .video(let editable):
+                    VideoEditorView(url: editable.url) { editingVideo = nil }
                 }
             }
-            // Videos → the trim + adjust + export video editor.
-            .fullScreenCover(item: $editingVideo) { editable in
-                VideoEditorView(url: editable.url) { editingVideo = nil }
+    }
+
+    /// Whichever editor wants to be open (photo takes precedence if both set).
+    private var editorTarget: Binding<EditorTarget?> {
+        Binding(
+            get: {
+                if let item = editingItem { return .photo(item) }
+                if let vid = editingVideo { return .video(vid) }
+                return nil
+            },
+            set: { newValue in
+                if newValue == nil { editingItem = nil; editingVideo = nil }
             }
+        )
     }
 
     private var mainContent: some View {
