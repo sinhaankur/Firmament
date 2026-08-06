@@ -24,6 +24,8 @@ struct CaptureControls: View {
     @Binding var showGrid: Bool
     /// Dark-frame calibration store (thermal-noise removal).
     @ObservedObject var darkStore: DarkFrameStore
+    /// The user's saved custom presets.
+    @ObservedObject var presetStore: PresetStore
 
     @State private var timerSeconds = 0        // self-timer: 0 / 3 / 10
     @State private var countdown: Int?         // live countdown display
@@ -58,6 +60,8 @@ struct CaptureControls: View {
     @State private var showSettings = false    // expandable pro controls
 
     @State private var activePreset: String?
+    @State private var showSavePreset = false
+    @State private var newPresetName = ""
 
     var body: some View {
         VStack(spacing: 10) {
@@ -114,29 +118,75 @@ struct CaptureControls: View {
         VStack(spacing: 3) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(CapturePreset.all) { preset in
-                        Button { applyPreset(preset) } label: {
-                            VStack(spacing: 2) {
-                                Image(systemName: preset.sfSymbol).font(.system(size: 15))
-                                Text(preset.name).font(.system(size: 9, weight: .medium))
-                            }
-                            .frame(width: 62, height: 44)
-                            .background(activePreset == preset.id ? Color.white.opacity(0.18) : Color.white.opacity(0.06),
-                                        in: RoundedRectangle(cornerRadius: 10))
-                            .overlay(RoundedRectangle(cornerRadius: 10)
-                                .stroke(activePreset == preset.id ? .cyan : .clear, lineWidth: 1))
-                            .foregroundStyle(.white)
-                        }
+                    ForEach(presetStore.all) { preset in
+                        presetChip(preset)
                     }
+                    saveChip
                 }
                 .padding(.horizontal, 2)
             }
-            if let id = activePreset, let p = CapturePreset.all.first(where: { $0.id == id }) {
+            if let id = activePreset, let p = presetStore.all.first(where: { $0.id == id }) {
                 Text(p.hint)
                     .font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
                     .multilineTextAlignment(.center).padding(.horizontal, 20)
             }
         }
+        .alert("Save preset", isPresented: $showSavePreset) {
+            TextField("Name", text: $newPresetName)
+            Button("Save") { saveCurrentPreset() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Saves the current ISO, shutter, exposure, zoom and focus.")
+        }
+    }
+
+    private func presetChip(_ preset: CapturePreset) -> some View {
+        let selected = activePreset == preset.id
+        return Button { applyPreset(preset) } label: {
+            VStack(spacing: 2) {
+                Image(systemName: preset.sfSymbol).font(.system(size: 15))
+                Text(preset.name).font(.system(size: 9, weight: .medium)).lineLimit(1)
+            }
+            .frame(width: 62, height: 44)
+            .background(selected ? Color.white.opacity(0.18) : Color.white.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? .cyan : .clear, lineWidth: 1))
+            .foregroundStyle(.white)
+        }
+        .contextMenu {
+            if presetStore.isCustom(preset) {
+                Button(role: .destructive) { presetStore.delete(preset) } label: {
+                    Label("Delete preset", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private var saveChip: some View {
+        Button {
+            newPresetName = ""
+            showSavePreset = true
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: "plus").font(.system(size: 15))
+                Text("Save").font(.system(size: 9, weight: .medium))
+            }
+            .frame(width: 62, height: 44)
+            .background(Color.cyan.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.cyan.opacity(0.5), lineWidth: 1))
+            .foregroundStyle(.cyan)
+        }
+    }
+
+    /// Save the current live settings as a named custom preset.
+    private func saveCurrentPreset() {
+        presetStore.save(
+            name: newPresetName,
+            iso: manualISO,
+            shutterSeconds: manualShutter,
+            totalExposureSeconds: totalExposure,
+            zoom: Double(camera.zoomFactor),
+            focusInfinity: manualFocusMode)
     }
 
     /// Apply a preset to the live camera + capture state, clamped to the device.

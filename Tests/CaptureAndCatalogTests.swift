@@ -53,6 +53,33 @@ final class CaptureAndCatalogTests: XCTestCase {
         XCTAssertFalse(a.isNeutral)
     }
 
+    /// Custom presets encode/decode cleanly (persistence round-trip) and the
+    /// store adds/deletes them.
+    @MainActor
+    func testCustomPresetStore() {
+        // Codable round-trip.
+        let p = CapturePreset(id: "custom.x", name: "Test", sfSymbol: "star.fill",
+                              iso: 1600, shutterSeconds: 0.5, totalExposureSeconds: 20,
+                              zoom: 2, focusInfinity: true, hint: "h")
+        let data = try! JSONEncoder().encode([p])
+        let back = try! JSONDecoder().decode([CapturePreset].self, from: data)
+        XCTAssertEqual(back.first, p)
+
+        // Store add + delete + custom detection.
+        let store = PresetStore()
+        let before = store.custom.count
+        store.save(name: "My Milky Way", iso: 3200, shutterSeconds: 1,
+                   totalExposureSeconds: 30, zoom: 1, focusInfinity: true)
+        XCTAssertEqual(store.custom.count, before + 1)
+        XCTAssertTrue(store.all.count > CapturePreset.all.count)
+        if let saved = store.custom.last {
+            XCTAssertTrue(store.isCustom(saved))
+            XCTAssertFalse(store.isCustom(CapturePreset.all[0]))
+            store.delete(saved)
+            XCTAssertEqual(store.custom.count, before)
+        }
+    }
+
     /// A 90° rotation swaps width and height; a crop shrinks the extent.
     func testGeometryRotateAndCrop() {
         let src = CIImage(color: .gray).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 100))

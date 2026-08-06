@@ -10,7 +10,7 @@ import Foundation
 /// straitjacket — every control stays adjustable afterwards.
 ///
 /// © Ankur Sinha.
-struct CapturePreset: Identifiable, Equatable {
+struct CapturePreset: Identifiable, Equatable, Codable {
     let id: String
     let name: String
     let sfSymbol: String

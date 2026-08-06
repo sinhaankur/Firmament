@@ -38,6 +38,7 @@ struct RootView: View {
     @StateObject private var timelapse = TimelapseRecorder()
     @StateObject private var peaking = FocusPeakingController()
     @StateObject private var darkStore = DarkFrameStore()
+    @StateObject private var presetStore = PresetStore()
 
     @State private var mode: Mode = .explore
     @State private var selected: SkyObject?
@@ -134,7 +135,8 @@ struct RootView: View {
                                     peakingOn: $peakingOn,
                                     pureMode: $pureMode,
                                     showGrid: $showGrid,
-                                    darkStore: darkStore)
+                                    darkStore: darkStore,
+                                    presetStore: presetStore)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 modeSwitcher
