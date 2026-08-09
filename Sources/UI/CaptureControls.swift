@@ -423,13 +423,17 @@ struct CaptureControls: View {
         }
         countdown = timerSeconds
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { t in
-            guard let c = countdown else { t.invalidate(); return }
-            if c <= 1 {
-                t.invalidate()
-                countdown = nil
-                night.capture(stackFrames: stackCount)
-            } else {
-                countdown = c - 1
+            // The timer callback is nonisolated; hop to the main actor to touch
+            // the view's state and the @MainActor NightCapture.
+            Task { @MainActor in
+                guard let c = countdown else { t.invalidate(); return }
+                if c <= 1 {
+                    t.invalidate()
+                    countdown = nil
+                    night.capture(stackFrames: stackCount)
+                } else {
+                    countdown = c - 1
+                }
             }
         }
     }

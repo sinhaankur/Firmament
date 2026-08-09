@@ -30,8 +30,10 @@ struct SkyOverlayView: View {
                         .onTapGesture { selected = item.object }
                 }
             }
-            // Re-render frequently so positions follow the gyro.
-            .animation(.linear(duration: 0.1), value: model.motion.pointingAzimuth)
+            // No position animation: the model now re-renders this view at the
+            // motion sensor's cadence (~30 Hz), so labels track the phone
+            // directly. Animating .position instead makes labels lag and slide
+            // to catch up during a sweep — the "drifty" feel we're removing.
         }
         .allowsHitTesting(true)
     }

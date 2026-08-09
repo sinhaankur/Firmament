@@ -1,8 +1,14 @@
 # Firmament — Quality Analysis & Gaps
 
-An honest QA audit as of 2026-08-05. Overall the codebase is healthy: **40 Swift
-files, ~5,375 LOC, 0 build warnings, 0 `fatalError`/`try!`, 1 safe force-unwrap,
-no third-party dependencies.** The gaps below are prioritized.
+An honest QA audit, last updated 2026-08-08. Overall the codebase is healthy:
+**48 Swift files, ~7,675 LOC, 0 build warnings, 0 `fatalError`/`try!`, 1 safe
+force-unwrap, no third-party dependencies.** The gaps below are prioritized.
+
+> 2026-08-08 update: AR overlay + editor performance pass (overlay now tracks the
+> phone at sensor cadence; photo-editor preview renders off-main, debounced),
+> plus a multi-track timeline scaffold in the video editor (`Timeline` model +
+> `EditorTimeline` view, 8 new tests). Three long-standing build warnings fixed —
+> build is back to 0 warnings. Tests: 37 passing.
 
 ## Strengths
 

@@ -104,7 +104,6 @@ struct SGP4 {
             + 0.75 * SGP4.ck2 * tsi / psisq * (3 * theta2 - 1) * (8 + 3 * etasq * (8 + etasq)))
         c1 = bstar * c2
         let x3thm1 = 3 * theta2 - 1
-        let c1sq = c1 * c1
         let tsisq = tsi * tsi
         _ = perigee; _ = tsisq
 
@@ -152,7 +151,6 @@ struct SGP4 {
         let xl = xmdf + omgadf + xnode + xnodp * templ
 
         let beta = sqrt(1 - e * e)
-        let xn = SGP4.xke / pow(a, 1.5)
 
         // Long-period periodics.
         let axn = e * cos(omgadf)

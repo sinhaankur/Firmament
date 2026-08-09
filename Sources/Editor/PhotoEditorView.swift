@@ -30,7 +30,17 @@ struct PhotoEditorView: View {
     @State private var splitCompare = false      // draggable before/after split
     @State private var splitX: CGFloat = 0.5
 
-    private let ctx = CIContext()
+    // A GPU-backed context, shared for the lifetime of the editor. Building one
+    // per render is expensive; a single reusable context is the documented
+    // pattern. Software rendering (the default) would keep the CPU busy on every
+    // slider tick.
+    private let ctx = CIContext(options: [.useSoftwareRenderer: false])
+
+    /// Monotonic id for the latest requested render. A background render only
+    /// commits its result if it's still the newest request — so dragging a
+    /// slider (many rapid requests) never shows a stale intermediate frame and
+    /// we don't block the main thread rendering every in-between value.
+    @State private var renderToken = 0
 
     enum Tool: String, CaseIterable {
         case enhance = "Enhance", exposure = "Exposure", contrast = "Contrast"
@@ -460,29 +470,57 @@ struct PhotoEditorView: View {
 
     // MARK: - Rendering
 
-    /// Downsample for a snappy live preview.
+    /// The downsampled original, computed once. Live preview renders from this
+    /// (not the full-res frame) so the pipeline stays cheap; save() re-renders at
+    /// full resolution.
+    @State private var scaledOriginal: CIImage?
+
+    /// Render the preview off the main thread and commit only if this is still
+    /// the newest request. Dragging a slider fires this many times a second;
+    /// doing the CoreImage pipeline + histogram + sharpness synchronously on the
+    /// main thread (the old behaviour) was the editor's jank. Now the main thread
+    /// only bumps a token and hands the work to a background task.
     private func renderPreview() {
-        let target = original.extent
-        guard !target.isEmpty, !target.isInfinite, !target.isNull else { return }
-        let scale = min(1, 1200 / max(target.width, target.height))
-        let scaled = original.transformed(by: .init(scaleX: scale, y: scale))
-
-        // Cache the untouched original once, for the before/after compare.
-        if originalPreview == nil,
-           let cg = ctx.createCGImage(scaled, from: scaled.extent) {
-            originalPreview = UIImage(cgImage: cg)
+        let scaled: CIImage
+        if let s = scaledOriginal {
+            scaled = s
+        } else {
+            let target = original.extent
+            guard !target.isEmpty, !target.isInfinite, !target.isNull else { return }
+            let scale = min(1, 1200 / max(target.width, target.height))
+            scaled = original.transformed(by: .init(scaleX: scale, y: scale))
+            scaledOriginal = scaled
         }
 
-        let out = ImageProcessor.apply(adj, to: scaled)
-        // Some filters return an infinite extent — always crop back to the image.
-        let bounds = out.extent.isInfinite ? scaled.extent : out.extent
-        let cropped = out.cropped(to: bounds)
-        if let cg = ctx.createCGImage(cropped, from: bounds) {
-            previewImage = UIImage(cgImage: cg)
+        renderToken &+= 1
+        let token = renderToken
+        let adjustments = adj
+        let context = ctx
+        let needsOriginal = originalPreview == nil
+
+        Task.detached(priority: .userInitiated) {
+            // Cache the untouched original once, for the before/after compare.
+            let origUI: UIImage? = needsOriginal
+                ? context.createCGImage(scaled, from: scaled.extent).map(UIImage.init)
+                : nil
+
+            let out = ImageProcessor.apply(adjustments, to: scaled)
+            // Some filters return an infinite extent — always crop back to the image.
+            let bounds = out.extent.isInfinite ? scaled.extent : out.extent
+            let cropped = out.cropped(to: bounds)
+            let previewUI = context.createCGImage(cropped, from: bounds).map(UIImage.init)
+            let hist = HistogramComputer.compute(cropped)
+            let sharp = SharpnessComputer.score(cropped)
+
+            await MainActor.run {
+                // Stale render (a newer slider value already superseded us) → drop.
+                guard token == renderToken else { return }
+                if let origUI, originalPreview == nil { originalPreview = origUI }
+                if let previewUI { previewImage = previewUI }
+                histogram = hist
+                sharpness = sharp
+            }
         }
-        // Update the histogram + focus score from the processed frame.
-        histogram = HistogramComputer.compute(cropped)
-        sharpness = SharpnessComputer.score(cropped)
     }
 
     /// Render the pipeline at full resolution and save.

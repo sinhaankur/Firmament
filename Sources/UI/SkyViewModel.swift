@@ -55,6 +55,15 @@ final class SkyViewModel: ObservableObject {
             .sink { [weak self] _ in self?.recompute() }
             .store(in: &cancellables)
 
+        // The overlay observes THIS model, but the live pointing lives in
+        // `motion` (a separate ObservableObject the view doesn't watch). Forward
+        // motion's changes so the AR overlay re-renders at the sensor's cadence
+        // (~30 Hz) as the phone sweeps — otherwise labels only refreshed at the
+        // ~2 Hz sky-recompute rate and visibly lagged the sky.
+        motion.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+
         recompute()
         refreshTLEs()
     }
@@ -106,21 +115,44 @@ final class SkyViewModel: ObservableObject {
         lastObserver = observer
 
         let engine = NightSkyEngine(observer: observer)
-        var all = engine.allObjects(at: date, aboveHorizonOnly: false)
+
+        // Sun / Moon / planets are a handful of bodies and move perceptibly, so
+        // resolve them every tick. Stars (the expensive ~8,900-body pass) barely
+        // move at this scale, so they're refreshed on the slower 2 s cadence and
+        // cached in `cachedStarObjects` between refreshes — avoiding re-running
+        // the bright-star trig several times a second for no visible change.
+        var all: [SkyObject] = [engine.sun(at: date), engine.moon(at: date)]
+        all += engine.planets(at: date)
+        recomputeStarField(engine: engine)   // may refresh cachedStarObjects
+        all += cachedStarObjects
+
         recomputeSatellites(observer: observer)
         all.append(contentsOf: satellites)   // show satellites as labels too
         objects = all
-        recomputeStarField(engine: engine)
     }
+
+    /// Bright/labeled stars resolved to sky positions, cached between the 2 s
+    /// star-field refreshes so `recompute()` doesn't re-resolve them every tick.
+    private var cachedStarObjects: [SkyObject] = []
 
     /// Refresh the point-field ~every 2s (stars barely move at this scale). Only
     /// keeps stars above the horizon, so the per-frame overlay Canvas iterates
-    /// roughly half as many points.
+    /// roughly half as many points. Resolves the full field once and derives the
+    /// labeled bright subset from it, so stars are projected a single time.
     private func recomputeStarField(engine: NightSkyEngine) {
         guard Date().timeIntervalSince(lastStarFieldAt) > 2 else { return }
         lastStarFieldAt = Date()
-        starField = engine.stars(at: date, full: true).compactMap {
+
+        // Resolve the full naked-eye catalog ONCE, then derive both consumers
+        // from it: the lightweight point-field (all up stars) and the labeled
+        // bright subset (named or brighter than mag 3, matching the labels the
+        // overlay draws). Previously we projected the catalog twice per refresh.
+        let resolved = engine.stars(at: date, full: true)
+        starField = resolved.compactMap {
             $0.altitude > -2 ? (alt: $0.altitude, az: $0.azimuth, mag: $0.magnitude ?? 6) : nil
+        }
+        cachedStarObjects = resolved.filter {
+            !$0.name.hasPrefix("HYG-") || ($0.magnitude ?? 6) < 3.0
         }
     }
 

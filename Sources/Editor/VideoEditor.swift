@@ -26,9 +26,18 @@ struct VideoEditorView: View {
     @State private var exportProgress: Double = 0
     @State private var status: String?
     @State private var thumbnails: [UIImage] = []
-    @State private var draggingStart = false
-    @State private var draggingEnd = false
     @State private var activeFilter: VideoFilter = .none
+
+    // Multi-track timeline scaffold. `timeline` is the model shown in the strip;
+    // `playhead` is the current time (seconds), kept in sync with the player via
+    // a periodic time observer. Trim/FX/text are mirrored onto the timeline so
+    // the strip reflects the edit; the export path still drives off trim below.
+    @State private var timeline = Timeline.empty(duration: 0)
+    @State private var playhead: Double = 0
+    @State private var selectedItemID: UUID?
+    @State private var timeObserver: Any?
+    /// True while a loop-back seek is in flight, so we only seek once per loop.
+    @State private var isLooping = false
 
     var body: some View {
         ZStack {
@@ -62,7 +71,11 @@ struct VideoEditorView: View {
             }
         }
         .onAppear(perform: setup)
-        .onDisappear { player?.pause() }
+        .onDisappear {
+            player?.pause()
+            if let timeObserver { player?.removeTimeObserver(timeObserver) }
+            timeObserver = nil
+        }
     }
 
     // MARK: - Chrome
@@ -90,6 +103,16 @@ struct VideoEditorView: View {
             if let status {
                 Text(status).font(.system(size: 12)).foregroundStyle(.green)
             }
+            // Multi-track timeline (scrub + see the edit across tracks).
+            EditorTimeline(
+                timeline: timeline,
+                playhead: $playhead,
+                thumbnails: thumbnails,
+                onScrub: { t in playhead = t; seek(t) },
+                onSelectItem: { selectedItemID = $0 },
+                selectedItemID: selectedItemID
+            )
+            .frame(height: 200)
             trimTimeline
             filterRow
             textPanel
@@ -100,7 +123,18 @@ struct VideoEditorView: View {
         }
         .padding()
         .background(.black)
+        // Every adjustment updates the live preview…
         .onChange(of: adjust) { _, _ in applyLivePreview() }
+        // …but the timeline only rebuilds when a track-visible input actually
+        // changes (trim window, filter, caption text). This avoids rebuilding the
+        // whole Timeline on every color-slider tick or caption keystroke.
+        .onChange(of: timelineSignature) { _, _ in syncTimeline() }
+    }
+
+    /// The subset of editor state the timeline lanes depend on. Only when this
+    /// changes do we rebuild the timeline model.
+    private var timelineSignature: String {
+        "\(trimStart)|\(trimEnd)|\(activeFilter.rawValue)|\(adjust.overlay.text)"
     }
 
     // MARK: - Trim timeline (filmstrip + draggable handles)
@@ -251,15 +285,63 @@ struct VideoEditorView: View {
                 duration = dur
                 trimStart = 0
                 trimEnd = dur
+                timeline = Timeline.singleClip(duration: dur, label: "Clip")
                 let item = AVPlayerItem(asset: asset)
                 item.videoComposition = VideoAdjust.composition(for: asset, adjust: adjust)
                 let p = AVPlayer(playerItem: item)
                 p.isMuted = true
                 player = p
+                installTimeObserver(on: p)
                 p.play()
             }
             await generateThumbnails(asset: asset, duration: dur)
         }
+    }
+
+    /// Keep `playhead` in sync with playback (~20 Hz) so the timeline's playhead
+    /// tracks the video. Loop back to the trim start when it runs past the end,
+    /// so previewing stays within the selected window.
+    private func installTimeObserver(on player: AVPlayer) {
+        let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { time in
+            let t = CMTimeGetSeconds(time)
+            guard t.isFinite else { return }
+            playhead = t
+            // Loop back to the trim start once we run past the trimmed end. Guard
+            // with `isLooping` so we issue exactly ONE seek per loop — otherwise
+            // the observer fires every 50 ms while the seek is in flight and
+            // stacks redundant seeks, which stutters playback.
+            if t >= trimEnd - 0.02 && !isLooping {
+                isLooping = true
+                player.seek(to: CMTime(seconds: trimStart, preferredTimescale: 600),
+                            toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+                    isLooping = false
+                }
+            }
+        }
+    }
+
+    /// Rebuild the timeline model to mirror the current trim / filter / caption,
+    /// so the multi-track strip reflects the edit. Cheap; called on edits.
+    private func syncTimeline() {
+        var t = Timeline.empty(duration: duration)
+        // Video: the trimmed span as a single clip.
+        t.setItems([TimelineItem(start: trimStart,
+                                 duration: max(0, trimEnd - trimStart),
+                                 label: "Clip")], on: .video)
+        // FX: a block spanning the trimmed clip if a non-None filter is active.
+        if activeFilter != .none {
+            t.setItems([TimelineItem(start: trimStart,
+                                     duration: max(0, trimEnd - trimStart),
+                                     label: activeFilter.rawValue)], on: .effect)
+        }
+        // Text: the caption over the trimmed span, if any.
+        if !adjust.overlay.isEmpty {
+            t.setItems([TimelineItem(start: trimStart,
+                                     duration: max(0, trimEnd - trimStart),
+                                     label: adjust.overlay.text)], on: .text)
+        }
+        timeline = t
     }
 
     /// Build a filmstrip of ~10 evenly-spaced thumbnails for the trim timeline.
