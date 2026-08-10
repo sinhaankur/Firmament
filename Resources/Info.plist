@@ -34,6 +34,8 @@
 	<string>Firmament uses the LiDAR scanner to detect the horizon and nearby objects so the sky overlay is correctly occluded.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UIRequiresFullScreen</key>
+	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

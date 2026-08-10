@@ -29,6 +29,9 @@ targets:
         CFBundleDisplayName: Firmament
         CFBundleShortVersionString: "0.1.0"
         UILaunchScreen: {}
+        # Firmament is portrait-only (AR/camera framing). Declaring full screen
+        # silences the "all interface orientations must be supported" review warning.
+        UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         # --- Privacy usage strings (required or the app crashes on first access) ---
