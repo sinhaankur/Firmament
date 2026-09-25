@@ -27,37 +27,25 @@ final class DarkFrameStore: ObservableObject {
     @Published var darkMeanLuma: Double = 0
 
     private let ctx = CIContext(options: [.workingColorSpace: NSNull()])
-    private var accumulator: CIImage?
-    private var count = 0
+    private var stacker = FrameStacker()
 
     /// Begin a fresh calibration.
     func beginCalibration() {
-        accumulator = nil
-        count = 0
+        stacker.reset()
         isCalibrated = false
     }
 
-    /// Add one covered-lens frame to the master (averaged).
+    /// Add one covered-lens frame to the master (a real linear-light mean, via
+    /// the shared FrameStacker — not a gamma-space dissolve).
     func addDarkFrame(_ frame: CIImage) {
-        count += 1
-        if let acc = accumulator {
-            let w = 1.0 / Double(count)
-            let blend = CIFilter(name: "CIDissolveTransition", parameters: [
-                kCIInputImageKey: acc,
-                kCIInputTargetImageKey: frame,
-                kCIInputTimeKey: w,
-            ])
-            accumulator = blend?.outputImage ?? acc
-        } else {
-            accumulator = frame
-        }
+        stacker.add(frame)
     }
 
     /// Finish calibration: store the master and measure its brightness.
     /// Returns true if it looks like a genuine dark (near-black).
     @discardableResult
     func finishCalibration(iso: Float, exposure: Double) -> Bool {
-        guard let acc = accumulator else { return false }
+        guard let acc = stacker.mean else { return false }
         master = acc
         calibratedISO = iso
         calibratedExposure = exposure
@@ -69,8 +57,7 @@ final class DarkFrameStore: ObservableObject {
 
     func clear() {
         master = nil
-        accumulator = nil
-        count = 0
+        stacker.reset()
         isCalibrated = false
     }
 

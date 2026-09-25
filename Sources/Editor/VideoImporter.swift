@@ -79,25 +79,17 @@ struct VideoImporter {
         let generator = makeGenerator(asset)
 
         let count = min(maxFrames, max(1, Int(total)))
-        var accumulator: CIImage?
-        var n = 0
+        // Stack sampled video frames into one clean still with a REAL linear-light
+        // mean (FrameStacker), not a gamma-space dissolve — same fix as the live
+        // capture stack, so an imported clip gets the same √N noise reduction.
+        var stacker = FrameStacker()
         for i in 0..<count {
             let t = total * (Double(i) + 0.5) / Double(count)
             guard let cg = try? await frame(generator, at: CMTime(seconds: t, preferredTimescale: 600)) else { continue }
-            let img = CIImage(cgImage: cg)
-            n += 1
-            if let acc = accumulator {
-                let blend = CIFilter(name: "CIDissolveTransition", parameters: [
-                    kCIInputImageKey: acc,
-                    kCIInputTargetImageKey: img,
-                    kCIInputTimeKey: 1.0 / Double(n),
-                ])
-                accumulator = blend?.outputImage ?? acc
-            } else {
-                accumulator = img
-            }
+            stacker.add(CIImage(cgImage: cg))
         }
-        guard let acc = accumulator, let cg = ctx.createCGImage(acc, from: acc.extent) else { return nil }
+        guard let acc = stacker.mean,
+              let cg = FrameStacker.linearContext.createCGImage(acc, from: acc.extent) else { return nil }
         return CIImage(cgImage: cg)
     }
 

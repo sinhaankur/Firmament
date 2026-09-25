@@ -268,21 +268,37 @@ final class NightCapture: NSObject, ObservableObject {
         return settings
     }
 
+    // MARK: - Cancel
+
+    private var cancelled = false
+
+    /// Abort an in-progress capture (stack) and return to idle. Any frames
+    /// already accumulated are discarded — nothing is saved.
+    func cancel() {
+        cancelled = true
+        stacker.reset()
+        stackTarget = 0
+        capturingDark = false
+        darkFramesLeft = 0
+        state = .idle
+    }
+
     // MARK: - Frame stacking (tripod)
 
-    private var stackAccumulator: CIImage?
-    private var stackCount = 0
+    private var stacker = FrameStacker()
     private var stackTarget = 0
+    private var stackCount: Int { stacker.count }
 
     private func captureStack(count: Int) {
-        stackAccumulator = nil
-        stackCount = 0
+        cancelled = false
+        stacker.reset()
         stackTarget = count
         captureNextStackFrame()
     }
 
     private func captureNextStackFrame() {
-        guard stackCount < stackTarget else {
+        if cancelled { return }
+        guard stacker.count < stackTarget else {
             finishStack(); return
         }
         // Fast processed frames for the stack (RAW is reserved for single shots).
@@ -290,8 +306,10 @@ final class NightCapture: NSObject, ObservableObject {
     }
 
     /// Average frames together. Averaging N frames drops read-noise by √N while
-    /// keeping star signal — the core of astro stacking. (Alignment via feature
-    /// matching lands in Phase 3; on a tripod frames are already registered.)
+    /// keeping star signal — the core of astro stacking. Done as a real
+    /// linear-light running mean (`FrameStacker`), not a gamma-space dissolve.
+    /// (Alignment via feature matching lands in Phase 3; on a tripod frames are
+    /// already registered.)
     private func accumulate(_ rawFrame: CIImage) {
         // Dark-frame subtraction: remove thermal noise + hot pixels per light.
         var frame = (darkSubtractionEnabled && darkStore?.isCalibrated == true)
@@ -302,19 +320,8 @@ final class NightCapture: NSObject, ObservableObject {
         if ditherEnabled {
             frame = Self.dither(frame)
         }
-        stackCount += 1
-        if let acc = stackAccumulator {
-            let weightNew = 1.0 / Double(stackCount)
-            let blend = CIFilter(name: "CIDissolveTransition", parameters: [
-                kCIInputImageKey: acc,
-                kCIInputTargetImageKey: frame,
-                kCIInputTimeKey: weightNew,
-            ])
-            stackAccumulator = blend?.outputImage ?? acc
-        } else {
-            stackAccumulator = frame
-        }
-        state = .capturing(progress: Double(stackCount) / Double(stackTarget))
+        stacker.add(frame)
+        state = .capturing(progress: Double(stacker.count) / Double(stackTarget))
         captureNextStackFrame()
     }
 
@@ -333,8 +340,10 @@ final class NightCapture: NSObject, ObservableObject {
 
     private func finishStack() {
         state = .processing
-        guard let acc = stackAccumulator,
-              let cg = ciContext.createCGImage(acc, from: acc.extent) else {
+        // Realize the running mean through the linear (no-gamma) context so the
+        // average that reaches the editor is the one we computed in linear light.
+        guard let acc = stacker.mean,
+              let cg = FrameStacker.linearContext.createCGImage(acc, from: acc.extent) else {
             state = .failed("Stacking failed"); return
         }
         lastImage = UIImage(cgImage: cg)
