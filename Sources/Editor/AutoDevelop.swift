@@ -85,7 +85,8 @@ struct AutoDevelop {
     }
 
     /// Mean luminance of the frame via CIAreaAverage over the whole extent.
-    private static func meanLuminance(of image: CIImage) -> Double {
+    /// Not private: NeuralEnhancer + the video editor analyze frames the same way.
+    static func meanLuminance(of image: CIImage) -> Double {
         let extent = image.extent
         guard extent.width > 0, extent.height > 0,
               let filter = CIFilter(name: "CIAreaAverage", parameters: [
